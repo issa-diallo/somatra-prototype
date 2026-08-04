@@ -5,7 +5,7 @@ const RATE = 42;
 const STORAGE_KEY = 'somatra-demo-entries-v1';
 const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
 const OPEN_TASKS_STORAGE_KEY = 'somatra-demo-open-preparations-v1';
-const OPERATOR_STORAGE_KEY = 'somatra-demo-operator-v1';
+const AUTHENTICATED_OPERATOR = 'Magasinier démo';
 const LEGACY_OPERATOR = 'Magasinier non renseigné (ancienne tâche)';
 const OPERATOR_MAX_LENGTH = 80;
 const ORDER_REFERENCE_MAX_LENGTH = 120;
@@ -31,11 +31,11 @@ let currentView = 'login';
 let pendingTask = null;
 let detailClient = null;
 let toastTimer = null;
-let selectedClient = '';
-let clientDialogOpener = null;
+let resolvedOrder = null;
 let scanStream = null;
 let scanFrame = null;
 let scanSession = 0;
+let warehouseTab = 'new';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -61,22 +61,6 @@ function loadClients() {
   return Object.fromEntries(Object.entries(seedOrders).map(([client, clientOrders]) => [client, [...clientOrders]]));
 }
 
-function persistClients() {
-  try { localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(orders)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
-}
-
-function loadOperator() {
-  try {
-    const operator = normalizeUserInput(localStorage.getItem(OPERATOR_STORAGE_KEY) || '');
-    return operator.length <= OPERATOR_MAX_LENGTH ? operator : '';
-  } catch (error) { return ''; }
-}
-
-function persistOperator(value) {
-  const operator = normalizeUserInput(value);
-  if (operator.length > OPERATOR_MAX_LENGTH) return;
-  try { localStorage.setItem(OPERATOR_STORAGE_KEY, operator); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
-}
 
 function loadOpenTasks() {
   try {
@@ -125,116 +109,86 @@ function showView(name) {
   if (name === 'warehouse') {
     renderRecent();
     renderOpenTasks();
+    renderWarehouseTab();
   }
   if (name === 'billing') renderBilling();
   window.scrollTo(0, 0);
-  $('#app').focus({preventScroll:true});
+  if (name === 'warehouse' && warehouseTab === 'new') $('#order-reference').focus({preventScroll:true});
+  else $('#app').focus({preventScroll:true});
 }
 
 function navigate(action) {
   if (action === 'home') showView(currentView === 'login' ? 'login' : (currentView === 'warehouse' || currentView === 'confirm' ? 'warehouse' : 'billing'));
-  if (action === 'warehouse') showView('warehouse');
+  if (action === 'warehouse') {
+    warehouseTab = currentView === 'confirm' ? 'open' : 'new';
+    showView('warehouse');
+  }
   if (action === 'billing') showView('billing');
 }
 
 function setProfile(profile) {
+  if (profile === 'warehouse') warehouseTab = 'new';
   showView(profile === 'warehouse' ? 'warehouse' : 'billing');
   toast(profile === 'warehouse' ? 'Profil magasinier activé' : 'Profil facturation activé');
 }
 
-function populateOrders(selectedOrder = '') {
-  const client = selectedClient;
-  const input = $('#order-reference');
-  $('#order-list').innerHTML = client ? orders[client].map((order) => `<option value="${escapeHtml(order)}"></option>`).join('') : '';
-  input.disabled = !client;
-  input.placeholder = client ? 'Ex. CMD-2026-0160' : 'Choisir d’abord un client…';
-  input.value = selectedOrder;
-  $('#scan-order').disabled = !client;
-  updateTaskSelection();
+function renderWarehouseTab() {
+  $$('[data-warehouse-tab]').forEach((button) => {
+    const active = button.dataset.warehouseTab === warehouseTab;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  $$('[data-warehouse-panel]').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.warehousePanel !== warehouseTab));
+}
+
+function setWarehouseTab(tab, moveFocus = false) {
+  if (!['new', 'open', 'history'].includes(tab)) return;
+  warehouseTab = tab;
+  renderRecent();
+  renderOpenTasks();
+  renderWarehouseTab();
+  if (!moveFocus) return;
+  const panel = document.querySelector(`[data-warehouse-panel="${tab}"]`);
+  if (tab === 'new') $('#order-reference').focus({preventScroll:true});
+  else if (panel) panel.focus({preventScroll:true});
+}
+
+function populateOrders() {
+  const references = [...new Set(Object.values(orders).flatMap((clientOrders) => Array.isArray(clientOrders) ? clientOrders : []).filter((order) => typeof order === 'string'))];
+  $('#order-list').innerHTML = references.map((order) => `<option value="${escapeHtml(order)}"></option>`).join('');
+}
+
+function resolveOrder(reference) {
+  const normalizedReference = normalizeName(reference);
+  if (!normalizedReference) return null;
+  for (const [client, clientOrders] of Object.entries(orders)) {
+    if (typeof client !== 'string' || !Array.isArray(clientOrders)) continue;
+    const order = clientOrders.find((candidate) => typeof candidate === 'string' && normalizeName(candidate) === normalizedReference);
+    if (order) return {client, order: normalizeUserInput(order)};
+  }
+  return null;
 }
 
 function updateTaskSelection() {
-  const client = selectedClient;
   const order = normalizeUserInput($('#order-reference').value);
-  const operator = normalizeUserInput($('#operator-name').value);
   const orderValid = order.length <= ORDER_REFERENCE_MAX_LENGTH;
-  const operatorValid = operator.length <= OPERATOR_MAX_LENGTH;
-  const complete = Boolean(operator && operatorValid && client && order && orderValid);
-  if (orderValid) clearTaskFieldError('order-reference', 'order-reference-error');
-  else showTaskFieldError('order-reference', 'order-reference-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
-  $('#task-summary').classList.toggle('hidden', !complete);
-  $('#timer-button').disabled = !complete;
-  if (complete) {
-    $('#selected-client').textContent = client;
-    $('#selected-order').textContent = order;
-  }
-}
-
-function selectClient(client) {
-  selectedClient = client;
-  $('#client-search').value = client;
-  renderClientSearch();
-  populateOrders();
-  $('#order-reference').focus();
-}
-
-function renderClientSearch() {
-  const query = $('#client-search').value;
-  const normalizedQuery = normalizeName(query);
-  const clients = Object.keys(orders).sort((a, b) => a.localeCompare(b, 'fr'));
-  const matches = normalizedQuery ? clients.filter((client) => normalizeName(client).includes(normalizedQuery)) : [];
-  const exactMatch = normalizedQuery && clients.some((client) => normalizeName(client) === normalizedQuery);
-  const resultBox = $('#client-results');
-
-  if (selectedClient && normalizeName(selectedClient) === normalizedQuery) {
-    resultBox.innerHTML = `<p class="client-selected">✓ ${escapeHtml(selectedClient)} sélectionné</p>`;
-  } else if (matches.length) {
-    resultBox.innerHTML = `<p class="result-label">${matches.length} client${matches.length > 1 ? 's' : ''} trouvé${matches.length > 1 ? 's' : ''}</p>` + matches.map((client) => `<button type="button" class="client-result" data-client="${escapeHtml(client)}"><strong>${escapeHtml(client)}</strong><span>${orders[client].length} commande${orders[client].length > 1 ? 's' : ''}</span></button>`).join('');
-  } else if (normalizedQuery) {
-    resultBox.innerHTML = '<p class="no-client">Aucun client correspondant.</p>';
+  resolvedOrder = order && orderValid ? resolveOrder(order) : null;
+  if (!order) {
+    clearTaskFieldError('order-reference', 'order-reference-error');
+  } else if (!orderValid) {
+    showTaskFieldError('order-reference', 'order-reference-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
+  } else if (!resolvedOrder) {
+    showTaskFieldError('order-reference', 'order-reference-error', 'Commande inconnue. Vérifiez la référence ou scannez de nouveau le code.');
   } else {
-    resultBox.innerHTML = '';
+    clearTaskFieldError('order-reference', 'order-reference-error');
   }
-
-  $$('.client-result').forEach((button) => button.addEventListener('click', () => selectClient(button.dataset.client)));
-  $('#open-client-dialog').classList.toggle('hidden', !normalizedQuery || exactMatch);
-  $('#open-client-dialog').textContent = `＋ Ajouter « ${query.trim()} »`;
-}
-
-function handleClientSearch() {
-  if (normalizeName($('#client-search').value) !== normalizeName(selectedClient)) {
-    selectedClient = '';
-    populateOrders();
+  $('#task-summary').classList.toggle('hidden', !resolvedOrder);
+  $('#timer-button').disabled = !resolvedOrder;
+  if (resolvedOrder) {
+    $('#selected-client').textContent = resolvedOrder.client;
+    $('#selected-order').textContent = resolvedOrder.order;
   }
-  renderClientSearch();
-}
-
-function openClientDialog() {
-  clientDialogOpener = document.activeElement;
-  $('#client-form').reset();
-  $('#new-client-name').value = $('#client-search').value.trim();
-  clearClientErrors();
-  $('#client-dialog').showModal();
-  $('#new-client-name').focus();
-}
-
-function closeClientDialog(showFeedback = false) {
-  $('#client-dialog').close();
-  if (clientDialogOpener) clientDialogOpener.focus();
-  if (showFeedback) toast('Ajout du client annulé');
-}
-
-function updateOperator() {
-  const operator = normalizeUserInput($('#operator-name').value);
-  const valid = operator.length <= OPERATOR_MAX_LENGTH;
-  if (valid) {
-    clearTaskFieldError('operator-name', 'operator-error');
-    persistOperator(operator);
-  } else {
-    showTaskFieldError('operator-name', 'operator-error', `Le nom du magasinier ne peut pas dépasser ${OPERATOR_MAX_LENGTH} caractères.`);
-  }
-  $('#warehouse-greeting').textContent = operator && valid ? `Bonjour, ${operator}` : 'Renseignez le magasinier';
-  updateTaskSelection();
 }
 
 function clearTaskFieldError(inputId, errorId) {
@@ -344,59 +298,6 @@ function closeScanner() {
   toast('Scan annulé — saisie manuelle disponible');
 }
 
-function clearClientErrors() {
-  ['new-client-error', 'new-order-error'].forEach((id) => {
-    $(`#${id}`).textContent = '';
-    $(`#${id}`).classList.add('hidden');
-  });
-  $('#new-client-name').removeAttribute('aria-invalid');
-  $('#new-order-reference').removeAttribute('aria-invalid');
-}
-
-function showClientError(inputId, errorId, message) {
-  $(`#${errorId}`).textContent = message;
-  $(`#${errorId}`).classList.remove('hidden');
-  $(`#${inputId}`).setAttribute('aria-invalid', 'true');
-}
-
-function addClient(event) {
-  event.preventDefault();
-  clearClientErrors();
-  const name = $('#new-client-name').value.trim().replace(/\s+/g, ' ');
-  const order = $('#new-order-reference').value.trim().replace(/\s+/g, ' ');
-  const duplicate = Object.keys(orders).find((client) => normalizeName(client) === normalizeName(name));
-  let firstInvalid = null;
-
-  if (!name) {
-    showClientError('new-client-name', 'new-client-error', 'Indiquez le nom du client.');
-    firstInvalid = $('#new-client-name');
-  } else if (duplicate) {
-    showClientError('new-client-name', 'new-client-error', `Ce client existe déjà sous le nom « ${duplicate} ».`);
-    firstInvalid = $('#new-client-name');
-  }
-  if (!order) {
-    showClientError('new-order-reference', 'new-order-error', 'Indiquez une première référence de commande.');
-    firstInvalid ||= $('#new-order-reference');
-  } else if (order.length > ORDER_REFERENCE_MAX_LENGTH) {
-    showClientError('new-order-reference', 'new-order-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
-    firstInvalid ||= $('#new-order-reference');
-  }
-  if (firstInvalid) {
-    firstInvalid.focus();
-    return;
-  }
-
-  orders[name] = [order];
-  persistClients();
-  selectedClient = name;
-  $('#client-search').value = name;
-  closeClientDialog();
-  renderClientSearch();
-  populateOrders(order);
-  updateBillingClientFilter();
-  $('#timer-button').focus();
-  toast(`${name} ajouté et commande ${order} sélectionnée`);
-}
 
 function formatClock(milliseconds) {
   const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
@@ -419,30 +320,13 @@ function pauseTaskAt(task, timestamp) {
 }
 
 function resetTaskSelection() {
-  selectedClient = '';
-  $('#client-search').value = '';
+  resolvedOrder = null;
   $('#order-reference').value = '';
-  renderClientSearch();
-  populateOrders();
+  updateTaskSelection();
 }
 
 function startTimer() {
-  const client = selectedClient;
   const order = normalizeUserInput($('#order-reference').value);
-  const operator = normalizeUserInput($('#operator-name').value);
-  if (!operator) {
-    showTaskFieldError('operator-name', 'operator-error', 'Indiquez le nom du magasinier.');
-    $('#operator-name').focus();
-    toast('Indiquez le nom du magasinier');
-    return;
-  }
-  if (operator.length > OPERATOR_MAX_LENGTH) {
-    showTaskFieldError('operator-name', 'operator-error', `Le nom du magasinier ne peut pas dépasser ${OPERATOR_MAX_LENGTH} caractères.`);
-    $('#operator-name').focus();
-    return;
-  }
-  clearTaskFieldError('operator-name', 'operator-error');
-  if (!client) return;
   if (!order) {
     showTaskFieldError('order-reference', 'order-reference-error', 'Indiquez une référence de commande.');
     $('#order-reference').focus();
@@ -453,20 +337,19 @@ function startTimer() {
     $('#order-reference').focus();
     return;
   }
-  clearTaskFieldError('order-reference', 'order-reference-error');
-  $('#operator-name').value = operator;
-  $('#order-reference').value = order;
-  persistOperator(operator);
-  if (!orders[client].some((reference) => normalizeName(reference) === normalizeName(order))) {
-    orders[client].push(order);
-    persistClients();
+  const resolution = resolveOrder(order);
+  if (!resolution) {
+    showTaskFieldError('order-reference', 'order-reference-error', 'Commande inconnue. Vérifiez la référence ou scannez de nouveau le code.');
+    $('#order-reference').focus();
+    return;
   }
+  clearTaskFieldError('order-reference', 'order-reference-error');
   const now = Date.now();
   openTasks.push({
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
-    client,
-    order,
-    operator,
+    client: resolution.client,
+    order: resolution.order,
+    operator: AUTHENTICATED_OPERATOR,
     status: 'running',
     createdAt: now,
     accumulatedMs: 0,
@@ -475,6 +358,7 @@ function startTimer() {
   persistOpenTasks();
   resetTaskSelection();
   renderOpenTasks();
+  setWarehouseTab('open', true);
   toast(`${order} démarrée`);
 }
 
@@ -484,6 +368,7 @@ function pauseTask(taskId) {
   pauseTaskAt(task, Date.now());
   persistOpenTasks();
   renderOpenTasks();
+  setWarehouseTab('open');
   toast(`${task.order} mise en pause`);
 }
 
@@ -495,6 +380,7 @@ function resumeTask(taskId) {
   task.lastStartedAt = now;
   persistOpenTasks();
   renderOpenTasks();
+  setWarehouseTab('open');
   toast(`${task.order} reprise`);
 }
 
@@ -503,10 +389,12 @@ function finishTask(taskId) {
   if (!task) return;
   pauseTaskAt(task, Date.now());
   persistOpenTasks();
+  warehouseTab = 'open';
   pendingTask = task;
   const roundedMinutes = Math.max(1, Math.ceil(task.accumulatedMs / 60000));
   $('#confirm-client').textContent = task.client;
   $('#confirm-order').textContent = task.order;
+  $('#confirm-operator').textContent = task.operator || LEGACY_OPERATOR;
   $('#duration-hours').value = Math.floor(roundedMinutes / 60);
   $('#duration-minutes').value = roundedMinutes % 60;
   $('#comment').value = '';
@@ -522,6 +410,8 @@ function renderOpenTasks() {
   const list = $('#open-tasks-list');
   const now = Date.now();
   $('#open-tasks-count').textContent = `${openTasks.length} ouverte${openTasks.length > 1 ? 's' : ''}`;
+  $('#warehouse-open-count').textContent = openTasks.length;
+  $('#warehouse-open-count').setAttribute('aria-label', `${openTasks.length} préparation${openTasks.length > 1 ? 's' : ''} ouverte${openTasks.length > 1 ? 's' : ''}`);
   list.innerHTML = openTasks.length ? openTasks.map((task) => {
     const running = task.status === 'running';
     return `<article class="open-task${running ? ' is-running' : ''}">
@@ -563,6 +453,7 @@ function saveEntry() {
   openTasks = openTasks.filter((task) => task.id !== taskId);
   persistOpenTasks();
   pendingTask = null;
+  warehouseTab = 'history';
   showView('warehouse');
   toast(`${order} enregistrée dans la synthèse`);
 }
@@ -583,6 +474,8 @@ function formatDate(date) {
 
 function renderRecent() {
   const recent = entries.filter((entry) => entry.date === DEMO_DATE).slice().reverse();
+  $('#warehouse-history-count').textContent = recent.length;
+  $('#warehouse-history-count').setAttribute('aria-label', `${recent.length} saisie${recent.length > 1 ? 's' : ''} enregistrée${recent.length > 1 ? 's' : ''}`);
   $('#today-total').textContent = `${formatDuration(recent.reduce((sum, entry) => sum + entry.minutes, 0))} aujourd’hui`;
   $('#recent-list').innerHTML = recent.length ? recent.slice(0, 4).map((entry) => `<div class="recent-item"><div><strong>${escapeHtml(entry.order)}</strong><small>${escapeHtml(entry.client)}</small></div><div><small>${escapeHtml(entry.operator)}</small><small>${escapeHtml(entry.status)}</small></div><span class="duration">${formatDuration(entry.minutes)}</span></div>`).join('') : '<div class="recent-item"><span>Aucune saisie aujourd’hui.</span></div>';
 }
@@ -681,27 +574,9 @@ function toast(message) {
 
 $$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
 $$('[data-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.action)));
+$$('[data-warehouse-tab]').forEach((button) => button.addEventListener('click', () => setWarehouseTab(button.dataset.warehouseTab)));
 $('#switch-profile').addEventListener('click', () => showView('login'));
-$('#client-search').addEventListener('input', handleClientSearch);
-$('#client-search').addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return;
-  const query = normalizeName($('#client-search').value);
-  const match = Object.keys(orders).find((client) => normalizeName(client) === query);
-  if (match) {
-    event.preventDefault();
-    selectClient(match);
-  }
-});
 $('#task-form').addEventListener('submit', (event) => event.preventDefault());
-$('#operator-name').addEventListener('input', updateOperator);
-$('#open-client-dialog').addEventListener('click', openClientDialog);
-$('#client-form').addEventListener('submit', addClient);
-$('#close-client-dialog').addEventListener('click', () => closeClientDialog(true));
-$('#cancel-client-dialog').addEventListener('click', () => closeClientDialog(true));
-$('#client-dialog').addEventListener('cancel', (event) => {
-  event.preventDefault();
-  closeClientDialog(true);
-});
 $('#order-reference').addEventListener('input', updateTaskSelection);
 $('#scan-order').addEventListener('click', openScanner);
 $('#close-scan-dialog').addEventListener('click', closeScanner);
@@ -726,8 +601,8 @@ $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
 window.setInterval(refreshRunningDurations, 1000);
 
-$('#operator-name').value = loadOperator();
-updateOperator();
-renderClientSearch();
+$('#warehouse-greeting').textContent = AUTHENTICATED_OPERATOR;
+populateOrders();
+updateTaskSelection();
 updateBillingClientFilter();
 showView('login');
