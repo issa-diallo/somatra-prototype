@@ -181,7 +181,7 @@ function formatDuration(minutes) {
 }
 
 function formatMoney(value) {
-  return value.toLocaleString('fr-FR', {style:'currency', currency:'EUR'});
+  return value.toLocaleString('fr-CH', {style:'currency', currency:'CHF'});
 }
 
 function formatDate(date) {
@@ -253,7 +253,7 @@ function csvEscape(value) {
 function exportCsv(client) {
   const filtered = getFilteredEntries(client);
   const lines = [
-    ['Date','Client','Commande','Opérateur','Durée (minutes)','Durée affichée','Commentaire','Statut','Montant estimé EUR (tarif fictif)'],
+    ['Date','Client','Commande','Opérateur','Durée (minutes)','Durée affichée','Commentaire','Statut','Montant estimé CHF (tarif fictif)'],
     ...filtered.map((entry) => [entry.date,entry.client,entry.order,entry.operator,entry.minutes,formatDuration(entry.minutes),entry.comment,entry.status,(entry.minutes / 60 * RATE).toFixed(2).replace('.', ',')])
   ];
   const csv = '\uFEFF' + lines.map((line) => line.map(csvEscape).join(';')).join('\r\n');
