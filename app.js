@@ -10,6 +10,9 @@ const LEGACY_OPERATOR = 'Magasinier non renseigné (ancienne tâche)';
 const UNIDENTIFIED_CLIENT = 'Client à identifier';
 const OPERATOR_MAX_LENGTH = 80;
 const ORDER_REFERENCE_MAX_LENGTH = 120;
+const CLIENT_MAX_LENGTH = 120;
+const EDIT_DURATION_MAX_HOURS = 23;
+const ENTRY_STATUSES = ['À contrôler', 'Validé'];
 const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
   'Client B': ['CMD-2026-0147', 'CMD-2026-0155'],
@@ -37,6 +40,7 @@ let scanFrame = null;
 let scanSession = 0;
 let warehouseTab = 'new';
 let activeProfile = null;
+let editingEntryId = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -483,6 +487,13 @@ function formatDate(date) {
   return new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'short', year:'numeric'}).format(new Date(`${date}T12:00:00`));
 }
 
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function updateSelectOptions(select, options, allLabel) {
   const current = select.value || 'all';
   select.innerHTML = `<option value="all">${escapeHtml(allLabel)}</option>` + options.map(({value, label}) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
@@ -505,6 +516,92 @@ function getTrackingEntries() {
   return entries.filter((entry) => (month === 'all' || entry.date.startsWith(month)) && (client === 'all' || entry.client === client) && (order === 'all' || entry.order === order));
 }
 
+function trackingEntryForm(entry) {
+  const hours = Math.floor(entry.minutes / 60);
+  const minutes = entry.minutes % 60;
+  return `<form class="tracking-edit-form" data-edit-entry-id="${escapeHtml(entry.id)}" novalidate>
+    <div class="tracking-edit-grid">
+      <label>Client/commande<input name="client" type="text" value="${escapeHtml(entry.client)}" maxlength="${CLIENT_MAX_LENGTH}" autocomplete="off" required></label>
+      <label>Référence<input name="order" type="text" value="${escapeHtml(entry.order)}" maxlength="${ORDER_REFERENCE_MAX_LENGTH}" autocomplete="off" required></label>
+      <label>Date<input name="date" type="date" value="${escapeHtml(entry.date)}" required></label>
+      <fieldset><legend>Durée</legend><div class="tracking-duration-fields"><label>Heures<input name="hours" type="number" value="${escapeHtml(hours)}" min="0" max="${EDIT_DURATION_MAX_HOURS}" inputmode="numeric" required></label><label>Minutes<input name="minutes" type="number" value="${escapeHtml(minutes)}" min="0" max="59" inputmode="numeric" required></label></div></fieldset>
+      <label>Statut<select name="status" required>${ENTRY_STATUSES.map((status) => `<option value="${escapeHtml(status)}"${entry.status === status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}</select></label>
+    </div>
+    <div class="tracking-edit-error hidden" role="alert" aria-live="assertive"></div>
+    <div class="tracking-edit-actions"><button class="secondary" type="button" data-entry-action="cancel">Annuler</button><button class="primary" type="submit">Enregistrer</button></div>
+  </form>`;
+}
+
+function trackingEntryCard(entry) {
+  if (String(entry.id) === editingEntryId) {
+    return `<article class="tracking-item is-editing">${trackingEntryForm(entry)}</article>`;
+  }
+  return `<article class="tracking-item">
+    <div class="tracking-item-heading"><div><span>Client/commande</span><strong>${escapeHtml(entry.client)}</strong></div><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></div>
+    <dl><div><dt>Référence</dt><dd>${escapeHtml(entry.order)}</dd></div><div><dt>Date</dt><dd>${escapeHtml(formatDate(entry.date))}</dd></div><div><dt>Durée</dt><dd class="duration">${formatDuration(entry.minutes)}</dd></div></dl>
+    <div class="tracking-item-actions"><button class="secondary" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation ${escapeHtml(entry.order)}">Modifier</button></div>
+  </article>`;
+}
+
+function startEditingEntry(entryId) {
+  const entry = entries.find((item) => String(item.id) === String(entryId));
+  if (!entry) return;
+  editingEntryId = String(entry.id);
+  renderTracking();
+  const form = $('#tracking-list').querySelector('[data-edit-entry-id]');
+  if (form) form.elements.client.focus({preventScroll:true});
+}
+
+function cancelEditingEntry() {
+  editingEntryId = null;
+  renderTracking();
+}
+
+function showTrackingEditErrors(form, errors) {
+  form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute('aria-invalid'));
+  errors.forEach(({name}) => form.elements[name]?.setAttribute('aria-invalid', 'true'));
+  const output = form.querySelector('.tracking-edit-error');
+  output.textContent = errors.map(({message}) => message).join(' ');
+  output.classList.toggle('hidden', errors.length === 0);
+  if (errors.length) form.elements[errors[0].name]?.focus();
+}
+
+function saveEditedEntry(form) {
+  const entry = entries.find((item) => String(item.id) === editingEntryId);
+  if (!entry || form.dataset.editEntryId !== editingEntryId) {
+    cancelEditingEntry();
+    return;
+  }
+
+  const client = normalizeUserInput(form.elements.client.value);
+  const order = normalizeUserInput(form.elements.order.value);
+  const date = form.elements.date.value;
+  const hoursText = form.elements.hours.value.trim();
+  const minutesText = form.elements.minutes.value.trim();
+  const status = form.elements.status.value;
+  const errors = [];
+  if (!client) errors.push({name:'client', message:'Indiquez un client ou une commande.'});
+  else if (client.length > CLIENT_MAX_LENGTH) errors.push({name:'client', message:`Le client ou la commande ne peut pas dépasser ${CLIENT_MAX_LENGTH} caractères.`});
+  if (!order) errors.push({name:'order', message:'Indiquez une référence.'});
+  else if (order.length > ORDER_REFERENCE_MAX_LENGTH) errors.push({name:'order', message:`La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`});
+  if (!isValidIsoDate(date)) errors.push({name:'date', message:'Indiquez une date valide.'});
+  if (!/^\d+$/.test(hoursText) || Number(hoursText) > EDIT_DURATION_MAX_HOURS) errors.push({name:'hours', message:`Les heures doivent être comprises entre 0 et ${EDIT_DURATION_MAX_HOURS}.`});
+  if (!/^\d+$/.test(minutesText) || Number(minutesText) > 59) errors.push({name:'minutes', message:'Les minutes doivent être comprises entre 0 et 59.'});
+  const totalMinutes = /^\d+$/.test(hoursText) && /^\d+$/.test(minutesText) ? Number(hoursText) * 60 + Number(minutesText) : 0;
+  if (!errors.some(({name}) => name === 'hours' || name === 'minutes') && totalMinutes <= 0) errors.push({name:'hours', message:'Indiquez une durée supérieure à zéro.'});
+  if (!ENTRY_STATUSES.includes(status)) errors.push({name:'status', message:'Sélectionnez un statut proposé.'});
+  if (errors.length) {
+    showTrackingEditErrors(form, errors);
+    return;
+  }
+
+  Object.assign(entry, {client, order, date, minutes:totalMinutes, status});
+  persistEntries();
+  editingEntryId = null;
+  renderTracking();
+  toast(`${order} mise à jour`);
+}
+
 function renderTracking() {
   updateTrackingFilters();
   const filtered = getTrackingEntries().slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -516,10 +613,7 @@ function renderTracking() {
     ['Clients/commandes uniques', uniqueClients], ['Préparations', filtered.length], ['Temps total', formatDuration(minutes)]
   ].map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
   $('#tracking-result-count').textContent = `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`;
-  $('#tracking-list').innerHTML = filtered.length ? filtered.map((entry) => `<article class="tracking-item">
-    <div class="tracking-item-heading"><div><span>Client/commande</span><strong>${escapeHtml(entry.client)}</strong></div><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></div>
-    <dl><div><dt>Référence</dt><dd>${escapeHtml(entry.order)}</dd></div><div><dt>Date</dt><dd>${escapeHtml(formatDate(entry.date))}</dd></div><div><dt>Durée</dt><dd class="duration">${formatDuration(entry.minutes)}</dd></div></dl>
-  </article>`).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
+  $('#tracking-list').innerHTML = filtered.length ? filtered.map(trackingEntryCard).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
 }
 
 function getFilteredEntries(clientOverride) {
@@ -641,6 +735,18 @@ $('#open-tasks-list').addEventListener('click', (event) => {
   if (taskAction === 'pause') pauseTask(taskId);
   if (taskAction === 'resume') resumeTask(taskId);
   if (taskAction === 'finish') finishTask(taskId);
+});
+$('#tracking-list').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-entry-action]');
+  if (!button) return;
+  if (button.dataset.entryAction === 'edit') startEditingEntry(button.dataset.entryId);
+  if (button.dataset.entryAction === 'cancel') cancelEditingEntry();
+});
+$('#tracking-list').addEventListener('submit', (event) => {
+  const form = event.target.closest('[data-edit-entry-id]');
+  if (!form) return;
+  event.preventDefault();
+  saveEditedEntry(form);
 });
 $('#save-entry').addEventListener('click', saveEntry);
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
