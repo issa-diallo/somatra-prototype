@@ -3,7 +3,8 @@
 const DEMO_DATE = '2026-08-04';
 const RATE = 42;
 const STORAGE_KEY = 'somatra-demo-entries-v1';
-const orders = {
+const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
+const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
   'Client B': ['CMD-2026-0147', 'CMD-2026-0155'],
   'Client C': ['CMD-2026-0149', 'CMD-2026-0158']
@@ -19,6 +20,7 @@ const seedEntries = [
 ];
 
 let entries = loadEntries();
+let orders = loadClients();
 let currentView = 'login';
 let timerInterval = null;
 let timerStartedAt = 0;
@@ -26,6 +28,8 @@ let elapsedDemoSeconds = 0;
 let pendingTask = null;
 let detailClient = null;
 let toastTimer = null;
+let selectedClient = '';
+let clientDialogOpener = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -41,6 +45,22 @@ function loadEntries() {
 
 function persistEntries() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
+}
+
+function loadClients() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CLIENTS_STORAGE_KEY));
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) return saved;
+  } catch (error) { /* Revenir aux données fictives initiales. */ }
+  return Object.fromEntries(Object.entries(seedOrders).map(([client, clientOrders]) => [client, [...clientOrders]]));
+}
+
+function persistClients() {
+  try { localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(orders)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
+}
+
+function normalizeName(value) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
 }
 
 function showView(name) {
@@ -68,16 +88,17 @@ function setProfile(profile) {
   toast(profile === 'warehouse' ? 'Profil magasinier activé' : 'Profil facturation activé');
 }
 
-function populateOrders() {
-  const client = $('#client-select').value;
+function populateOrders(selectedOrder = '') {
+  const client = selectedClient;
   const select = $('#order-select');
-  select.innerHTML = client ? '<option value="">Sélectionner une commande…</option>' + orders[client].map((order) => `<option>${order}</option>`).join('') : '<option value="">Choisir d’abord un client…</option>';
+  select.innerHTML = client ? '<option value="">Sélectionner une commande…</option>' + orders[client].map((order) => `<option>${escapeHtml(order)}</option>`).join('') : '<option value="">Choisir d’abord un client…</option>';
   select.disabled = !client;
+  select.value = selectedOrder;
   updateTaskSelection();
 }
 
 function updateTaskSelection() {
-  const client = $('#client-select').value;
+  const client = selectedClient;
   const order = $('#order-select').value;
   const complete = Boolean(client && order);
   $('#task-summary').classList.toggle('hidden', !complete);
@@ -88,6 +109,111 @@ function updateTaskSelection() {
   }
 }
 
+function selectClient(client) {
+  selectedClient = client;
+  $('#client-search').value = client;
+  renderClientSearch();
+  populateOrders();
+  $('#order-select').focus();
+}
+
+function renderClientSearch() {
+  const query = $('#client-search').value;
+  const normalizedQuery = normalizeName(query);
+  const clients = Object.keys(orders).sort((a, b) => a.localeCompare(b, 'fr'));
+  const matches = normalizedQuery ? clients.filter((client) => normalizeName(client).includes(normalizedQuery)) : clients;
+  const exactMatch = normalizedQuery && clients.some((client) => normalizeName(client) === normalizedQuery);
+  const resultBox = $('#client-results');
+
+  if (selectedClient && normalizeName(selectedClient) === normalizedQuery) {
+    resultBox.innerHTML = `<p class="client-selected">✓ ${escapeHtml(selectedClient)} sélectionné</p>`;
+  } else if (matches.length) {
+    resultBox.innerHTML = `<p class="result-label">${matches.length} client${matches.length > 1 ? 's' : ''} trouvé${matches.length > 1 ? 's' : ''}</p>` + matches.map((client) => `<button type="button" class="client-result" data-client="${escapeHtml(client)}"><strong>${escapeHtml(client)}</strong><span>${orders[client].length} commande${orders[client].length > 1 ? 's' : ''}</span></button>`).join('');
+  } else if (normalizedQuery) {
+    resultBox.innerHTML = '<p class="no-client">Aucun client correspondant.</p>';
+  } else {
+    resultBox.innerHTML = '';
+  }
+
+  $$('.client-result').forEach((button) => button.addEventListener('click', () => selectClient(button.dataset.client)));
+  $('#open-client-dialog').classList.toggle('hidden', !normalizedQuery || exactMatch);
+  $('#open-client-dialog').textContent = `＋ Ajouter « ${query.trim()} »`;
+}
+
+function handleClientSearch() {
+  if (normalizeName($('#client-search').value) !== normalizeName(selectedClient)) {
+    selectedClient = '';
+    populateOrders();
+  }
+  renderClientSearch();
+}
+
+function openClientDialog() {
+  clientDialogOpener = document.activeElement;
+  $('#client-form').reset();
+  $('#new-client-name').value = $('#client-search').value.trim();
+  clearClientErrors();
+  $('#client-dialog').showModal();
+  $('#new-client-name').focus();
+}
+
+function closeClientDialog(showFeedback = false) {
+  $('#client-dialog').close();
+  if (clientDialogOpener) clientDialogOpener.focus();
+  if (showFeedback) toast('Ajout du client annulé');
+}
+
+function clearClientErrors() {
+  ['new-client-error', 'new-order-error'].forEach((id) => {
+    $(`#${id}`).textContent = '';
+    $(`#${id}`).classList.add('hidden');
+  });
+  $('#new-client-name').removeAttribute('aria-invalid');
+  $('#new-order-reference').removeAttribute('aria-invalid');
+}
+
+function showClientError(inputId, errorId, message) {
+  $(`#${errorId}`).textContent = message;
+  $(`#${errorId}`).classList.remove('hidden');
+  $(`#${inputId}`).setAttribute('aria-invalid', 'true');
+}
+
+function addClient(event) {
+  event.preventDefault();
+  clearClientErrors();
+  const name = $('#new-client-name').value.trim().replace(/\s+/g, ' ');
+  const order = $('#new-order-reference').value.trim().replace(/\s+/g, ' ');
+  const duplicate = Object.keys(orders).find((client) => normalizeName(client) === normalizeName(name));
+  let firstInvalid = null;
+
+  if (!name) {
+    showClientError('new-client-name', 'new-client-error', 'Indiquez le nom du client.');
+    firstInvalid = $('#new-client-name');
+  } else if (duplicate) {
+    showClientError('new-client-name', 'new-client-error', `Ce client existe déjà sous le nom « ${duplicate} ».`);
+    firstInvalid = $('#new-client-name');
+  }
+  if (!order) {
+    showClientError('new-order-reference', 'new-order-error', 'Indiquez une première référence de commande.');
+    firstInvalid ||= $('#new-order-reference');
+  }
+  if (firstInvalid) {
+    firstInvalid.focus();
+    return;
+  }
+
+  orders[name] = [order];
+  persistClients();
+  selectedClient = name;
+  $('#client-search').value = name;
+  closeClientDialog();
+  renderClientSearch();
+  populateOrders(order);
+  updateBillingClientFilter();
+  $('#timer-button').focus();
+  toast(`${name} ajouté et commande ${order} sélectionnée`);
+}
+
 function formatClock(seconds) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -96,7 +222,7 @@ function formatClock(seconds) {
 }
 
 function startTimer() {
-  const client = $('#client-select').value;
+  const client = selectedClient;
   const order = $('#order-select').value;
   if (!client || !order) return;
   pendingTask = {client, order};
@@ -107,7 +233,9 @@ function startTimer() {
   $('#timer-button').innerHTML = '<span aria-hidden="true">■</span> Arrêter et confirmer';
   $('#timer-button').classList.add('stop');
   $('#cancel-timer').classList.remove('hidden');
-  $('#client-select').disabled = true;
+  $('#client-search').disabled = true;
+  $('#open-client-dialog').disabled = true;
+  $('#client-results').classList.add('disabled');
   $('#order-select').disabled = true;
   timerInterval = window.setInterval(() => {
     elapsedDemoSeconds = Math.floor((Date.now() - timerStartedAt) / 1000 * 10);
@@ -141,8 +269,10 @@ function resetTimerUI(clearTask = true) {
   $('#timer-button').innerHTML = '<span aria-hidden="true">▶</span> Démarrer la préparation';
   $('#timer-button').classList.remove('stop');
   $('#cancel-timer').classList.add('hidden');
-  $('#client-select').disabled = false;
-  $('#order-select').disabled = !$('#client-select').value;
+  $('#client-search').disabled = false;
+  $('#open-client-dialog').disabled = false;
+  $('#client-results').classList.remove('disabled');
+  $('#order-select').disabled = !selectedClient;
   if (clearTask) pendingTask = null;
   updateTaskSelection();
 }
@@ -169,6 +299,8 @@ function saveEntry() {
   const order = pendingTask.order;
   resetTimerUI(true);
   $('#task-form').reset();
+  selectedClient = '';
+  renderClientSearch();
   populateOrders();
   showView('warehouse');
   toast(`${order} enregistrée dans la synthèse`);
@@ -211,7 +343,16 @@ function groupByClient(filtered) {
   }, {});
 }
 
+function updateBillingClientFilter() {
+  const filter = $('#client-filter');
+  const current = filter.value || 'all';
+  const clients = Object.keys(orders).sort((a, b) => a.localeCompare(b, 'fr'));
+  filter.innerHTML = '<option value="all">Tous les clients</option>' + clients.map((client) => `<option>${escapeHtml(client)}</option>`).join('');
+  filter.value = clients.includes(current) ? current : 'all';
+}
+
 function renderBilling() {
+  updateBillingClientFilter();
   const filtered = getFilteredEntries();
   const groups = Object.values(groupByClient(filtered)).sort((a,b) => a.client.localeCompare(b.client));
   const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
@@ -220,7 +361,7 @@ function renderBilling() {
     ['Clients', groups.length, ''], ['Préparations', filtered.length, ''], ['Temps total', formatDuration(minutes), 'orange'], ['Montant estimé*', formatMoney(minutes / 60 * RATE), 'green']
   ].map(([label,value,color]) => `<div class="kpi ${color}"><span>${label}</span><strong>${value}</strong></div>`).join('');
   $('#result-count').textContent = `${groups.length} client${groups.length > 1 ? 's' : ''} · ${reviewCount} saisie${reviewCount > 1 ? 's' : ''} à contrôler`;
-  $('#billing-rows').innerHTML = groups.length ? groups.map((group) => `<tr><td><strong>${group.client}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(group.minutes / 60 * RATE)}</td><td><span class="status ${group.review ? 'review' : 'valid'}">${group.review ? 'À contrôler' : 'Validé'}</span></td><td><button class="detail-button" type="button" data-client="${group.client}">Voir le détail →</button></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Aucune saisie ne correspond aux filtres.</td></tr>';
+  $('#billing-rows').innerHTML = groups.length ? groups.map((group) => `<tr><td><strong>${escapeHtml(group.client)}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(group.minutes / 60 * RATE)}</td><td><span class="status ${group.review ? 'review' : 'valid'}">${group.review ? 'À contrôler' : 'Validé'}</span></td><td><button class="detail-button" type="button" data-client="${escapeHtml(group.client)}">Voir le détail →</button></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Aucune saisie ne correspond aux filtres.</td></tr>';
   $$('.detail-button').forEach((button) => button.addEventListener('click', () => showDetail(button.dataset.client)));
 }
 
@@ -280,7 +421,25 @@ function toast(message) {
 $$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
 $$('[data-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.action)));
 $('#switch-profile').addEventListener('click', () => { if (timerInterval && !window.confirm('Un chronomètre est actif. Quitter et annuler cette tâche ?')) return; resetTimerUI(true); showView('login'); });
-$('#client-select').addEventListener('change', populateOrders);
+$('#client-search').addEventListener('input', handleClientSearch);
+$('#client-search').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  const query = normalizeName($('#client-search').value);
+  const match = Object.keys(orders).find((client) => normalizeName(client) === query);
+  if (match) {
+    event.preventDefault();
+    selectClient(match);
+  }
+});
+$('#task-form').addEventListener('submit', (event) => event.preventDefault());
+$('#open-client-dialog').addEventListener('click', openClientDialog);
+$('#client-form').addEventListener('submit', addClient);
+$('#close-client-dialog').addEventListener('click', () => closeClientDialog(true));
+$('#cancel-client-dialog').addEventListener('click', () => closeClientDialog(true));
+$('#client-dialog').addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeClientDialog(true);
+});
 $('#order-select').addEventListener('change', updateTaskSelection);
 $('#timer-button').addEventListener('click', () => timerInterval ? stopTimer() : startTimer());
 $('#cancel-timer').addEventListener('click', cancelTimer);
@@ -289,4 +448,6 @@ $('#save-entry').addEventListener('click', saveEntry);
 $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
 
+renderClientSearch();
+updateBillingClientFilter();
 showView('login');
