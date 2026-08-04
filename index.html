@@ -77,7 +77,16 @@
       </section>
       <section id="warehouse-panel-tracking" class="warehouse-tab-panel tracking-block hidden" data-warehouse-panel="tracking" aria-labelledby="tracking-title" tabindex="-1">
         <div class="section-heading"><div><h2 id="tracking-title">Suivi des préparations</h2><p>Consultez les temps enregistrés sans information financière.</p></div></div>
-        <div class="tracking-filters panel" aria-label="Filtres du suivi">
+        <div class="tracking-filter-toolbar">
+          <button id="tracking-filter-toggle" class="tracking-filter-toggle" type="button" aria-expanded="false" aria-controls="tracking-filters">
+            <span class="tracking-filter-icon" aria-hidden="true"></span>
+            <span class="tracking-filter-label">Filtres</span>
+            <span id="tracking-filter-summary" aria-live="polite">Tous les résultats</span>
+            <span class="tracking-filter-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <button id="tracking-filter-reset" class="tracking-filter-reset hidden" type="button" disabled>Effacer</button>
+        </div>
+        <div id="tracking-filters" class="tracking-filters panel" aria-label="Filtres du suivi">
           <label>Mois<select id="tracking-month-filter"></select></label>
           <label>Client/commande<select id="tracking-client-filter"></select></label>
           <label>Préparation<select id="tracking-order-filter"></select></label>

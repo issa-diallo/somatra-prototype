@@ -515,6 +515,33 @@ function updateTrackingFilters() {
   updateSelectOptions($('#tracking-order-filter'), preparations.map((order) => ({value:order, label:order})), 'Toutes les préparations');
 }
 
+function updateTrackingFilterControls() {
+  const activeCount = ['tracking-month-filter', 'tracking-client-filter', 'tracking-order-filter']
+    .filter((id) => $(`#${id}`).value !== 'all').length;
+  $('#tracking-filter-summary').textContent = activeCount === 0
+    ? 'Tous les résultats'
+    : `${activeCount} filtre${activeCount > 1 ? 's' : ''} actif${activeCount > 1 ? 's' : ''}`;
+  $('#tracking-filter-reset').classList.toggle('hidden', activeCount === 0);
+  $('#tracking-filter-reset').disabled = activeCount === 0;
+}
+
+function toggleTrackingFilters() {
+  const filters = $('#tracking-filters');
+  const isOpen = filters.classList.toggle('is-open');
+  $('#tracking-filter-toggle').setAttribute('aria-expanded', String(isOpen));
+}
+
+function resetTrackingFilters(event) {
+  const shouldRestoreFocus = event?.currentTarget === $('#tracking-filter-reset');
+  ['tracking-month-filter', 'tracking-client-filter', 'tracking-order-filter']
+    .forEach((id) => { $(`#${id}`).value = 'all'; });
+  trackingVisibleLimit = TRACKING_BATCH_SIZE;
+  editingEntryId = null;
+  renderTracking();
+  const toggle = $('#tracking-filter-toggle');
+  if (shouldRestoreFocus && toggle.offsetParent !== null) toggle.focus();
+}
+
 function getTrackingEntries() {
   const month = $('#tracking-month-filter').value;
   const client = $('#tracking-client-filter').value;
@@ -614,6 +641,7 @@ function saveEditedEntry(form) {
 
 function renderTracking() {
   updateTrackingFilters();
+  updateTrackingFilterControls();
   const filtered = getTrackingEntries().slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const visible = filtered.slice(0, trackingVisibleLimit);
   const remaining = Math.max(0, filtered.length - visible.length);
@@ -622,8 +650,10 @@ function renderTracking() {
   $('#warehouse-tracking-count').textContent = filtered.length;
   $('#warehouse-tracking-count').setAttribute('aria-label', `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} au total`);
   $('#tracking-kpis').innerHTML = [
-    ['Clients/commandes uniques', uniqueClients], ['Préparations', filtered.length], ['Temps total', formatDuration(minutes)]
-  ].map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
+    ['Clients/commandes uniques', 'Clients', uniqueClients],
+    ['Préparations', 'Préparations', filtered.length],
+    ['Temps total', 'Temps total', formatDuration(minutes)]
+  ].map(([desktopLabel, mobileLabel, value]) => `<div class="kpi" role="group" aria-label="${desktopLabel} : ${value}"><span class="kpi-label-desktop" aria-hidden="true">${desktopLabel}</span><span class="kpi-label-mobile" aria-hidden="true">${mobileLabel}</span><strong aria-hidden="true">${value}</strong></div>`).join('');
   $('#tracking-result-count').textContent = `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} au total`;
   $('#tracking-list').innerHTML = filtered.length ? visible.map(trackingEntryCard).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
   const canLoadMore = remaining > 0 && editingEntryId === null;
@@ -771,6 +801,8 @@ $('#save-entry').addEventListener('click', saveEntry);
   editingEntryId = null;
   renderTracking();
 }));
+$('#tracking-filter-toggle').addEventListener('click', toggleTrackingFilters);
+$('#tracking-filter-reset').addEventListener('click', resetTrackingFilters);
 $('#tracking-load-more').addEventListener('click', () => {
   trackingVisibleLimit += TRACKING_BATCH_SIZE;
   renderTracking();
