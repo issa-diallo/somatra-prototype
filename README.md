@@ -19,7 +19,7 @@ Puis ouvrir <http://localhost:8080>.
 ## Parcours conseillé
 
 1. Choisir **Magasinier**. L’authentification est simulée par l’opérateur en lecture seule **Magasinier démo**, automatiquement associé à toute nouvelle préparation. Le menu magasinier s’ouvre sur **Nouvelle**.
-2. Dans **Nouvelle**, scanner en priorité une commande ou saisir sa référence manuellement. Le client est résolu automatiquement depuis une commande fictive connue ; une référence inconnue ne peut pas être démarrée.
+2. Dans **Nouvelle**, scanner une commande ou saisir sa référence manuellement. Toute référence non vide de 120 caractères maximum peut être démarrée, sans recherche préalable de client. Le scan remplit uniquement le champ : le démarrage reste une action manuelle.
 3. Démarrer une préparation : l’interface passe sur **En cours**, où son temps progresse selon l’horloge réelle et reste suivi après une actualisation.
 4. Lancer éventuellement plusieurs commandes simultanément, puis les mettre en pause, reprendre ou terminer indépendamment depuis **En cours**.
 5. Corriger si besoin la durée et confirmer : l’interface passe sur **Historique** pour afficher la saisie enregistrée.
@@ -28,7 +28,7 @@ Puis ouvrir <http://localhost:8080>.
 
 Le scan natif de codes-barres et de QR codes est proposé uniquement si le navigateur prend en charge les API nécessaires et si une caméra compatible est disponible et autorisée. Dans le cas contraire, la référence de commande reste saisissable manuellement. Le flux vidéo est analysé localement dans le navigateur : aucune image n’est envoyée ni stockée.
 
-Les saisies, les préparations ouvertes et les commandes fictives déjà enregistrées sont conservées localement dans le `localStorage` du navigateur. Chaque préparation en cours continue indépendamment selon son propre timestamp réel, y compris si la page est fermée. Démarrer, mettre en pause, reprendre ou terminer une commande ne modifie pas les autres. Aucun backend ni appel réseau n’est utilisé. Pour retrouver toutes les données initiales, supprimer les clés `somatra-demo-entries-v1`, `somatra-demo-clients-v1` et `somatra-demo-open-preparations-v1` dans le stockage local du navigateur. L’ancienne clé `somatra-demo-operator-v1` peut également être supprimée lors d’un reset complet, mais elle n’est plus lue ni écrite.
+Les saisies, les préparations ouvertes et les commandes fictives déjà enregistrées sont conservées localement dans le `localStorage` du navigateur. Chaque nouvelle préparation utilise temporairement la valeur générique « Client à identifier » dans l’historique, la facturation et le CSV. Chaque préparation en cours continue indépendamment selon son propre timestamp réel, y compris si la page est fermée. Démarrer, mettre en pause, reprendre ou terminer une commande ne modifie pas les autres. Aucun backend ni appel réseau n’est utilisé. Pour retrouver toutes les données initiales, supprimer les clés `somatra-demo-entries-v1`, `somatra-demo-clients-v1` et `somatra-demo-open-preparations-v1` dans le stockage local du navigateur. L’ancienne clé `somatra-demo-operator-v1` peut également être supprimée lors d’un reset complet, mais elle n’est plus lue ni écrite.
 
 ## Fichiers
 

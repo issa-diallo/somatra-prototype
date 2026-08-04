@@ -57,17 +57,16 @@
 
       <div id="warehouse-panel-new" class="warehouse-tab-panel warehouse-layout" data-warehouse-panel="new" aria-labelledby="warehouse-tab-new-title" tabindex="-1">
         <form id="task-form" class="panel task-panel preparation-panel">
-          <div class="preparation-title"><h2 id="warehouse-tab-new-title">Nouvelle préparation</h2><p>Scannez la commande ou saisissez sa référence pour identifier automatiquement le client.</p></div>
+          <div class="preparation-title"><h2 id="warehouse-tab-new-title">Nouvelle préparation</h2><p>Scannez la commande ou saisissez sa référence pour préparer le démarrage.</p></div>
           <label for="order-reference">Commande</label>
           <div class="order-entry">
-            <input id="order-reference" class="field-input" type="text" list="order-list" autocomplete="off" placeholder="Ex. CMD-2026-0142" maxlength="120" required aria-describedby="order-help order-reference-error" autofocus>
-            <datalist id="order-list"></datalist>
+            <input id="order-reference" class="field-input" type="text" autocomplete="off" placeholder="Ex. 4056489514374" maxlength="120" required aria-describedby="order-help order-reference-error" autofocus>
             <button id="scan-order" class="secondary scan-button" type="button"><span aria-hidden="true">▣</span> Scanner</button>
           </div>
           <p id="order-help" class="hint search-hint">Le scan est prioritaire ; la saisie manuelle reste toujours disponible.</p>
           <p id="order-reference-error" class="field-error task-field-error hidden" role="alert"></p>
           <div id="task-summary" class="task-summary hidden" aria-live="polite">
-            <span>COMMANDE IDENTIFIÉE</span><strong id="selected-order"></strong><small id="selected-client"></small>
+            <span>RÉFÉRENCE PRÊTE</span><strong id="selected-order"></strong>
           </div>
           <p class="launch-help">Chaque préparation suit son propre temps, indépendamment des autres.</p>
           <button id="timer-button" class="primary timer-button" type="button" disabled><span aria-hidden="true">▶</span> Démarrer la préparation sélectionnée</button>

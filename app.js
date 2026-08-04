@@ -7,6 +7,7 @@ const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
 const OPEN_TASKS_STORAGE_KEY = 'somatra-demo-open-preparations-v1';
 const AUTHENTICATED_OPERATOR = 'Magasinier démo';
 const LEGACY_OPERATOR = 'Magasinier non renseigné (ancienne tâche)';
+const UNIDENTIFIED_CLIENT = 'Client à identifier';
 const OPERATOR_MAX_LENGTH = 80;
 const ORDER_REFERENCE_MAX_LENGTH = 120;
 const seedOrders = {
@@ -31,7 +32,6 @@ let currentView = 'login';
 let pendingTask = null;
 let detailClient = null;
 let toastTimer = null;
-let resolvedOrder = null;
 let scanStream = null;
 let scanFrame = null;
 let scanSession = 0;
@@ -88,10 +88,6 @@ function loadOpenTasks() {
 
 function persistOpenTasks() {
   try { localStorage.setItem(OPEN_TASKS_STORAGE_KEY, JSON.stringify(openTasks)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
-}
-
-function normalizeName(value) {
-  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
 }
 
 function normalizeUserInput(value) {
@@ -154,41 +150,20 @@ function setWarehouseTab(tab, moveFocus = false) {
   else if (panel) panel.focus({preventScroll:true});
 }
 
-function populateOrders() {
-  const references = [...new Set(Object.values(orders).flatMap((clientOrders) => Array.isArray(clientOrders) ? clientOrders : []).filter((order) => typeof order === 'string'))];
-  $('#order-list').innerHTML = references.map((order) => `<option value="${escapeHtml(order)}"></option>`).join('');
-}
-
-function resolveOrder(reference) {
-  const normalizedReference = normalizeName(reference);
-  if (!normalizedReference) return null;
-  for (const [client, clientOrders] of Object.entries(orders)) {
-    if (typeof client !== 'string' || !Array.isArray(clientOrders)) continue;
-    const order = clientOrders.find((candidate) => typeof candidate === 'string' && normalizeName(candidate) === normalizedReference);
-    if (order) return {client, order: normalizeUserInput(order)};
-  }
-  return null;
-}
-
 function updateTaskSelection() {
   const order = normalizeUserInput($('#order-reference').value);
   const orderValid = order.length <= ORDER_REFERENCE_MAX_LENGTH;
-  resolvedOrder = order && orderValid ? resolveOrder(order) : null;
   if (!order) {
     clearTaskFieldError('order-reference', 'order-reference-error');
   } else if (!orderValid) {
     showTaskFieldError('order-reference', 'order-reference-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
-  } else if (!resolvedOrder) {
-    showTaskFieldError('order-reference', 'order-reference-error', 'Commande inconnue. Vérifiez la référence ou scannez de nouveau le code.');
   } else {
     clearTaskFieldError('order-reference', 'order-reference-error');
   }
-  $('#task-summary').classList.toggle('hidden', !resolvedOrder);
-  $('#timer-button').disabled = !resolvedOrder;
-  if (resolvedOrder) {
-    $('#selected-client').textContent = resolvedOrder.client;
-    $('#selected-order').textContent = resolvedOrder.order;
-  }
+  const canStart = Boolean(order && orderValid);
+  $('#task-summary').classList.toggle('hidden', !canStart);
+  $('#timer-button').disabled = !canStart;
+  if (canStart) $('#selected-order').textContent = order;
 }
 
 function clearTaskFieldError(inputId, errorId) {
@@ -320,7 +295,6 @@ function pauseTaskAt(task, timestamp) {
 }
 
 function resetTaskSelection() {
-  resolvedOrder = null;
   $('#order-reference').value = '';
   updateTaskSelection();
 }
@@ -337,18 +311,12 @@ function startTimer() {
     $('#order-reference').focus();
     return;
   }
-  const resolution = resolveOrder(order);
-  if (!resolution) {
-    showTaskFieldError('order-reference', 'order-reference-error', 'Commande inconnue. Vérifiez la référence ou scannez de nouveau le code.');
-    $('#order-reference').focus();
-    return;
-  }
   clearTaskFieldError('order-reference', 'order-reference-error');
   const now = Date.now();
   openTasks.push({
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
-    client: resolution.client,
-    order: resolution.order,
+    client: UNIDENTIFIED_CLIENT,
+    order,
     operator: AUTHENTICATED_OPERATOR,
     status: 'running',
     createdAt: now,
@@ -500,7 +468,7 @@ function groupByClient(filtered) {
 function updateBillingClientFilter() {
   const filter = $('#client-filter');
   const current = filter.value || 'all';
-  const clients = Object.keys(orders).sort((a, b) => a.localeCompare(b, 'fr'));
+  const clients = [...new Set([...Object.keys(orders), ...entries.map((entry) => entry.client)])].sort((a, b) => a.localeCompare(b, 'fr'));
   filter.innerHTML = '<option value="all">Tous les clients</option>' + clients.map((client) => `<option>${escapeHtml(client)}</option>`).join('');
   filter.value = clients.includes(current) ? current : 'all';
 }
@@ -602,7 +570,6 @@ $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
 window.setInterval(refreshRunningDurations, 1000);
 
 $('#warehouse-greeting').textContent = AUTHENTICATED_OPERATOR;
-populateOrders();
 updateTaskSelection();
 updateBillingClientFilter();
 showView('login');
