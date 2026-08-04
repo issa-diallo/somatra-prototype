@@ -1,39 +1,112 @@
-# Somatra — prototype commercial
+# Somatra — prototype de suivi des préparations
 
-[Consulter le prototype en ligne](https://issa-diallo.github.io/somatra-prototype/)
+[![Démo publique](https://img.shields.io/badge/d%C3%A9mo_GitHub_Pages-ouvrir-0969da?logo=github)](https://issa-diallo.github.io/somatra-prototype/)
 
-Prototype web statique, mobile-first et sans dépendance, réalisé uniquement avec des données fictives.
+Prototype web statique, responsive et mobile-first pour démontrer le suivi du temps de préparation logistique et sa consolidation mensuelle.
 
-> **Important :** il s’agit d’une démonstration commerciale, sans authentification réelle, backend, facturation réelle ni données client.
+> [!WARNING]
+> **Démonstration commerciale uniquement.** Toutes les données et tous les montants sont fictifs. L’état est conservé dans le `localStorage` du navigateur : il n’existe ni authentification, ni backend, ni base partagée, ni facturation réelle. Ce prototype n’est pas adapté à la production.
+
+## Fonctionnalités
+
+### Profil Magasinier
+
+- Identité opérateur simulée et non modifiable **Magasinier démo**, automatiquement associée aux nouvelles préparations ; le profil reste opérationnel et les saisies restent éditables.
+- Scan local de QR codes et codes-barres avec la caméra lorsque le navigateur le permet, ou saisie manuelle d’une référence.
+- Acceptation de toute référence non vide de **120 caractères maximum**, sans résolution ni validation par un référentiel backend. Le scan remplit le champ ; le démarrage reste une action explicite.
+- Suivi de plusieurs préparations simultanées et indépendantes, avec pause, reprise et fin individuelles.
+- Persistance des préparations ouvertes et de leur chronométrage, y compris après actualisation ou fermeture de la page.
+- Confirmation et correction de la durée avant enregistrement.
+- Vue **Suivi** sans prix ni montant financier :
+  - liste compacte adaptée au tactile ;
+  - affichage initial de 20 lignes, puis chargement par lots de 20 ;
+  - filtres par mois, client/commande et référence de préparation, repliables sur mobile ;
+  - KPI calculés sur **toutes** les saisies correspondant aux filtres, même lorsque seules les 20 premières lignes sont rendues ;
+  - modification au clic d’une ligne : client/commande, référence, date, durée et statut ;
+  - statut limité aux valeurs proposées **À contrôler** et **Validé**.
+
+### Profil Facturation
+
+- Synthèse mensuelle fictive en CHF : clients, préparations, temps total et montant estimé.
+- Filtres par mois, client et statut.
+- Détail des préparations d’un client.
+- Export CSV des résultats filtrés, avec des montants estimés en CHF calculés selon un tarif fictif.
+
+Les informations financières et l’export CSV sont visibles uniquement dans l’interface **Facturation** ; aucun prix n’apparaît dans l’interface **Magasinier**. Cette séparation est simulée et ne repose sur aucune authentification réelle.
+
+## Parcours de démonstration
+
+1. Sur l’écran **Profil**, choisir **Magasinier** ; l’application ouvre le menu **Nouvelle**.
+2. Scanner un QR code/code-barres ou saisir une référence, puis appuyer explicitement sur le bouton de démarrage.
+3. Dans **En cours**, lancer éventuellement d’autres préparations, puis mettre en pause, reprendre ou terminer chacune indépendamment.
+4. À la fin d’une préparation, ajuster si nécessaire la durée et confirmer l’enregistrement.
+5. Dans **Suivi**, filtrer les saisies, consulter les KPI et toucher une ligne pour modifier ses informations.
+6. Revenir à **Profil** et choisir **Facturation**.
+7. Dans **Facturation**, filtrer la synthèse, ouvrir le détail d’un client puis exporter le CSV fictif.
 
 ## Lancer localement
 
-Depuis ce dossier :
+L’application ne nécessite ni Node.js ni installation de dépendances pour s’exécuter. Depuis la racine du dépôt :
 
 ```bash
-python3 -m http.server 8080
+python3 -m http.server 8080 --bind 127.0.0.1
 ```
 
-Puis ouvrir <http://localhost:8080>.
+Ouvrir ensuite <http://127.0.0.1:8080/>.
 
-## Parcours conseillé
+Node.js est facultatif en local et sert uniquement, si souhaité, à vérifier la syntaxe JavaScript (la CI utilise Node.js 24) :
 
-1. Choisir **Magasinier**. L’authentification est simulée par l’opérateur en lecture seule **Magasinier démo**, automatiquement associé à toute nouvelle préparation. Le menu magasinier s’ouvre sur **Nouvelle**.
-2. Dans **Nouvelle**, scanner une commande ou saisir sa référence manuellement. Toute référence non vide de 120 caractères maximum peut être démarrée, sans recherche préalable de client. Le scan remplit uniquement le champ : le démarrage reste une action manuelle.
-3. Démarrer une préparation : l’interface passe sur **En cours**, où son temps progresse selon l’horloge réelle et reste suivi après une actualisation.
-4. Lancer éventuellement plusieurs commandes simultanément, puis les mettre en pause, reprendre ou terminer indépendamment depuis **En cours**.
-5. Corriger si besoin la durée et confirmer : l’interface passe sur **Suivi** pour afficher la saisie enregistrée.
-6. Dans **Suivi**, combiner les filtres par mois, client/commande et référence de préparation. Les indicateurs et le compteur de l’onglet reflètent les saisies affichées, sans donnée financière.
-7. Changer de profil puis ouvrir **Facturation** : la saisie apparaît dans la synthèse d’août 2026 avec le statut « À contrôler ».
-8. Filtrer les résultats, ouvrir le détail d’un client ou télécharger l’export CSV. Les prix, tarifs et montants fictifs restent réservés à ce profil.
+```bash
+node --check app.js
+```
 
-Le scan natif de codes-barres et de QR codes est proposé uniquement si le navigateur prend en charge les API nécessaires et si une caméra compatible est disponible et autorisée. Dans le cas contraire, la référence de commande reste saisissable manuellement. Le flux vidéo est analysé localement dans le navigateur : aucune image n’est envoyée ni stockée.
+## Architecture et fichiers
 
-Les saisies, les préparations ouvertes et les commandes fictives déjà enregistrées sont conservées localement dans le `localStorage` du navigateur. Lorsqu’une nouvelle préparation n’a pas de client correspondant, sa référence de commande normalisée sert de libellé de regroupement dans le suivi, la facturation et le CSV. Les anciennes préparations enregistrées avec le libellé exact « Client à identifier » sont automatiquement mises à jour de la même manière si leur référence est valide ; les clients fictifs et les autres libellés existants restent inchangés. Chaque préparation en cours continue indépendamment selon son propre timestamp réel, y compris si la page est fermée. Démarrer, mettre en pause, reprendre ou terminer une commande ne modifie pas les autres. Aucun backend ni appel réseau n’est utilisé. Pour retrouver toutes les données initiales, supprimer les clés `somatra-demo-entries-v1`, `somatra-demo-clients-v1` et `somatra-demo-open-preparations-v1` dans le stockage local du navigateur. L’ancienne clé `somatra-demo-operator-v1` peut également être supprimée lors d’un reset complet, mais elle n’est plus lue ni écrite.
+- `index.html` : structure des vues, formulaires et navigation.
+- `styles.css` : interface responsive, mobile-first et adaptée aux interactions tactiles.
+- `app.js` : état de démonstration, chronomètres, filtres, édition, synthèse et export CSV.
+- `assets/` : ressources statiques, dont le logo Somatra.
+- `.github/workflows/ci-pages.yml` : validation et publication GitHub Pages.
+- `BRIEF-PROTOTYPE.md` : objectifs, contraintes et périmètre fonctionnel du prototype.
 
-## Fichiers
+## Stockage local et réinitialisation
 
-- `index.html` : structure des vues et navigation.
-- `styles.css` : interface responsive logistique/industrielle.
-- `app.js` : suivi horaire persistant, saisies, filtres, synthèse, détail et export CSV.
-- `BRIEF-PROTOTYPE.md` : cahier des charges fourni.
+L’application utilise ou peut lire trois clés :
+
+- `somatra-demo-entries-v1` : saisies enregistrées ;
+- `somatra-demo-clients-v1` : clients et commandes fictifs ; cette clé peut être lue, mais n’est plus écrite dans le flux courant ;
+- `somatra-demo-open-preparations-v1` : préparations ouvertes et état des chronomètres.
+
+Effacer ces trois clés dans les outils de développement du navigateur, puis recharger la page, réalise un reset complet et restaure l’état initial fictif. Si le `localStorage` est indisponible ou bloqué, le prototype peut rester utilisable pendant la session, sans garantie de persistance.
+
+## CI et déploiement
+
+Le workflow GitHub Actions :
+
+1. utilise Node.js **24** pour exécuter `node --check app.js` ;
+2. contrôle la présence des fichiers attendus et la structure HTML ;
+3. effectue un smoke test HTTP sur la page et ses ressources statiques ;
+4. publie l’artefact sur GitHub Pages après validation d’un `push` sur `main`.
+
+Les pull requests vers `main` exécutent la validation sans publier le site. Le workflow peut également être lancé manuellement.
+
+## Sécurité et confidentialité
+
+- Utiliser uniquement les données synthétiques fournies ; ne saisir aucune donnée personnelle, client ou commande réelle.
+- Le flux caméra est analysé localement par le navigateur : aucune image n’est envoyée ni stockée par l’application.
+- Le scan dépend de `getUserMedia`, de `BarcodeDetector`, d’une caméra compatible, de l’autorisation de l’utilisateur et des règles de contexte sécurisé du navigateur. La prise en charge varie selon le navigateur et l’appareil ; la saisie manuelle reste disponible.
+- Le stockage est local au navigateur, sans chiffrement applicatif, synchronisation serveur ni contrôle d’accès : toute personne utilisant le même profil de navigateur peut potentiellement consulter ou modifier l’état de démonstration.
+
+## Limites avant une mise en production
+
+Une application réelle nécessiterait notamment :
+
+- un backend et un référentiel fiable des commandes et clients ;
+- une authentification réelle, des rôles et des contrôles d’accès ;
+- une persistance partagée, synchronisée, sauvegardée et résiliente ;
+- des règles d’autorisation pour l’édition, la validation des temps et un journal d’audit ;
+- une intégration cadrée au système de facturation, sans tarif de démonstration ;
+- une stratégie de tests complète (unitaires, intégration, bout en bout, compatibilité et accessibilité) ;
+- une analyse de sécurité et de confidentialité, la protection des données, la supervision et un hébergement adaptés.
+
+Ces éléments sont hors du périmètre du prototype actuel.
