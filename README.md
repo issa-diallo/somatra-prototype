@@ -21,12 +21,12 @@ Puis ouvrir <http://localhost:8080>.
 1. Choisir **Magasinier**.
 2. Sélectionner un client puis une commande.
 3. Démarrer une préparation : son temps progresse selon l’horloge réelle et reste suivi après une actualisation.
-4. Lancez éventuellement une autre commande (la première est mise en pause), puis mettez en pause, reprenez ou terminez une préparation ouverte.
+4. Lancez éventuellement plusieurs commandes simultanément, puis mettez en pause, reprenez ou terminez chaque préparation indépendamment.
 5. Corriger si besoin la durée et confirmer.
 6. Ouvrir **Facturation** : la saisie apparaît dans la synthèse d’août 2026 avec le statut « À contrôler ».
 7. Filtrer les résultats, ouvrir le détail d’un client ou télécharger l’export CSV.
 
-Les saisies, les préparations ouvertes et les clients/commandes ajoutés sont conservés dans le `localStorage` du navigateur. Une préparation en cours continue selon les timestamps réels, y compris si la page est fermée. Aucun backend ni appel réseau n’est utilisé. Pour retrouver toutes les données initiales, supprimer les clés `somatra-demo-entries-v1`, `somatra-demo-clients-v1` et `somatra-demo-open-preparations-v1` dans le stockage local du navigateur.
+Les saisies, les préparations ouvertes et les clients/commandes ajoutés sont conservés dans le `localStorage` du navigateur. Chaque préparation en cours continue indépendamment selon son propre timestamp réel, y compris si la page est fermée. Démarrer, mettre en pause, reprendre ou terminer une commande ne modifie pas les autres. Aucun backend ni appel réseau n’est utilisé. Pour retrouver toutes les données initiales, supprimer les clés `somatra-demo-entries-v1`, `somatra-demo-clients-v1` et `somatra-demo-open-preparations-v1` dans le stockage local du navigateur.
 
 ## Fichiers
 

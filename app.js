@@ -62,7 +62,7 @@ function loadOpenTasks() {
   try {
     const saved = JSON.parse(localStorage.getItem(OPEN_TASKS_STORAGE_KEY));
     if (!Array.isArray(saved)) return [];
-    const tasks = saved.filter((task) => task && typeof task.id === 'string' && typeof task.client === 'string' && typeof task.order === 'string')
+    return saved.filter((task) => task && typeof task.id === 'string' && typeof task.client === 'string' && typeof task.order === 'string')
       .map((task) => ({
         id: task.id,
         client: task.client,
@@ -72,14 +72,6 @@ function loadOpenTasks() {
         accumulatedMs: Number.isFinite(task.accumulatedMs) && task.accumulatedMs >= 0 ? task.accumulatedMs : 0,
         lastStartedAt: Number.isFinite(task.lastStartedAt) ? task.lastStartedAt : null
       }));
-    const running = tasks.filter((task) => task.status === 'running' && task.lastStartedAt !== null)
-      .sort((a, b) => b.lastStartedAt - a.lastStartedAt);
-    if (running.length > 1) {
-      const now = Date.now();
-      running.slice(1).forEach((task) => pauseTaskAt(task, now));
-      localStorage.setItem(OPEN_TASKS_STORAGE_KEY, JSON.stringify(tasks));
-    }
-    return tasks;
   } catch (error) {
     return [];
   }
@@ -267,12 +259,6 @@ function pauseTaskAt(task, timestamp) {
   task.lastStartedAt = null;
 }
 
-function pauseOtherTasks(taskId, timestamp) {
-  openTasks.forEach((task) => {
-    if (task.id !== taskId) pauseTaskAt(task, timestamp);
-  });
-}
-
 function resetTaskSelection() {
   $('#task-form').reset();
   selectedClient = '';
@@ -285,7 +271,6 @@ function startTimer() {
   const order = $('#order-select').value;
   if (!client || !order) return;
   const now = Date.now();
-  pauseOtherTasks(null, now);
   openTasks.push({
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
     client,
@@ -314,7 +299,6 @@ function resumeTask(taskId) {
   const task = openTasks.find((item) => item.id === taskId);
   if (!task || task.status !== 'paused') return;
   const now = Date.now();
-  pauseOtherTasks(task.id, now);
   task.status = 'running';
   task.lastStartedAt = now;
   persistOpenTasks();
