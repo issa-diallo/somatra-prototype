@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
@@ -45,12 +45,16 @@
 
     <section id="view-warehouse" class="view hidden" aria-labelledby="warehouse-title">
       <div class="page-heading">
-        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Nouvelle préparation</h1><p>Bonjour, Opérateur démo <span class="status-dot"></span> Poste actif</p></div>
+        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Nouvelle préparation</h1><p><span id="warehouse-greeting">Renseignez le magasinier</span> <span class="status-dot"></span> Poste actif</p></div>
         <button class="secondary desktop-only" type="button" data-action="billing">Voir la facturation →</button>
       </div>
       <div class="warehouse-layout">
         <form id="task-form" class="panel task-panel">
-          <div class="step-title"><span>1</span><div><h2>Identifier la tâche</h2><p>Recherchez le client et sélectionnez sa commande.</p></div></div>
+          <div class="step-title"><span>1</span><div><h2>Identifier la tâche</h2><p>Attribuez la préparation, puis choisissez ou saisissez sa commande.</p></div></div>
+          <label for="operator-name">Nom du magasinier</label>
+          <input id="operator-name" class="field-input" type="text" autocomplete="name" placeholder="Ex. Opérateur 04" maxlength="80" required aria-describedby="operator-help operator-error">
+          <p id="operator-help" class="hint search-hint">Obligatoire · conservé uniquement sur ce poste.</p>
+          <p id="operator-error" class="field-error task-field-error hidden"></p>
           <label for="client-search">Client</label>
           <div class="client-search">
             <input id="client-search" type="search" autocomplete="off" placeholder="Ex. Client A" aria-describedby="client-search-help" aria-controls="client-results">
@@ -58,8 +62,14 @@
             <div id="client-results" class="client-results" aria-live="polite"></div>
             <button id="open-client-dialog" class="secondary add-client-button hidden" type="button">＋ Ajouter ce client</button>
           </div>
-          <label for="order-select">Commande</label>
-          <select id="order-select" required disabled><option value="">Choisir d’abord un client…</option></select>
+          <label for="order-reference">Commande</label>
+          <div class="order-entry">
+            <input id="order-reference" class="field-input" type="text" list="order-list" autocomplete="off" placeholder="Choisir d’abord un client…" maxlength="120" required disabled aria-describedby="order-help order-reference-error">
+            <datalist id="order-list"></datalist>
+            <button id="scan-order" class="secondary scan-button" type="button" disabled><span aria-hidden="true">▣</span> Scanner</button>
+          </div>
+          <p id="order-help" class="hint search-hint">Choisissez une commande existante ou saisissez une nouvelle référence.</p>
+          <p id="order-reference-error" class="field-error task-field-error hidden"></p>
           <div id="task-summary" class="task-summary hidden">
             <span>COMMANDE SÉLECTIONNÉE</span><strong id="selected-order"></strong><small id="selected-client"></small>
           </div>
@@ -148,10 +158,23 @@
       <input id="new-client-name" type="text" autocomplete="organization" required aria-describedby="new-client-error">
       <p id="new-client-error" class="field-error hidden"></p>
       <label for="new-order-reference">Première référence de commande</label>
-      <input id="new-order-reference" type="text" autocomplete="off" placeholder="Ex. CMD-2026-0160" required aria-describedby="new-order-error">
+      <input id="new-order-reference" type="text" autocomplete="off" placeholder="Ex. CMD-2026-0160" maxlength="120" required aria-describedby="new-order-error">
       <p id="new-order-error" class="field-error hidden"></p>
       <div class="button-row"><button id="cancel-client-dialog" class="secondary" type="button">Annuler</button><button class="primary" type="submit">Ajouter et sélectionner</button></div>
     </form>
+  </dialog>
+
+  <dialog id="scan-dialog" class="scan-dialog" aria-labelledby="scan-dialog-title" aria-describedby="scan-feedback">
+    <div class="scan-dialog-content">
+      <div class="dialog-heading">
+        <div><div class="eyebrow">Lecture locale</div><h2 id="scan-dialog-title">Scanner la commande</h2></div>
+        <button id="close-scan-dialog" class="dialog-close" type="button" aria-label="Fermer le scanner">×</button>
+      </div>
+      <p>Aucune image n’est envoyée ni enregistrée.</p>
+      <div class="camera-frame"><video id="scan-video" playsinline muted></video><span class="scan-guide" aria-hidden="true"></span></div>
+      <p id="scan-feedback" class="scan-feedback" role="status" aria-live="polite">Initialisation de la caméra…</p>
+      <div class="button-row"><button id="cancel-scan" class="secondary" type="button">Annuler</button></div>
+    </div>
   </dialog>
 
   <nav id="mobile-nav" class="mobile-nav hidden" aria-label="Navigation principale">
