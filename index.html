@@ -45,49 +45,42 @@
 
     <section id="view-warehouse" class="view hidden" aria-labelledby="warehouse-title">
       <div class="page-heading">
-        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Nouvelle préparation</h1><p><span id="warehouse-greeting">Renseignez le magasinier</span> <span class="status-dot"></span> Poste actif</p></div>
+        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Préparations</h1><p><span id="warehouse-greeting">Magasinier démo</span> <span class="status-dot"></span> Poste actif</p></div>
         <button class="secondary desktop-only" type="button" data-action="billing">Voir la facturation →</button>
       </div>
-      <div class="warehouse-layout">
-        <form id="task-form" class="panel task-panel">
-          <div class="step-title"><span>1</span><div><h2>Identifier la tâche</h2><p>Attribuez la préparation, puis choisissez ou saisissez sa commande.</p></div></div>
-          <label for="operator-name">Nom du magasinier</label>
-          <input id="operator-name" class="field-input" type="text" autocomplete="name" placeholder="Ex. Opérateur 04" maxlength="80" required aria-describedby="operator-help operator-error">
-          <p id="operator-help" class="hint search-hint">Obligatoire · conservé uniquement sur ce poste.</p>
-          <p id="operator-error" class="field-error task-field-error hidden"></p>
-          <label for="client-search">Client</label>
-          <div class="client-search">
-            <input id="client-search" type="search" autocomplete="off" placeholder="Ex. Client A" aria-describedby="client-search-help" aria-controls="client-results">
-            <p id="client-search-help" class="hint search-hint">Saisissez tout ou partie du nom.</p>
-            <div id="client-results" class="client-results" aria-live="polite"></div>
-            <button id="open-client-dialog" class="secondary add-client-button hidden" type="button">＋ Ajouter ce client</button>
-          </div>
+
+      <nav class="warehouse-menu" aria-label="Menu des préparations">
+        <button type="button" data-warehouse-tab="new" aria-current="page" aria-controls="warehouse-panel-new">Nouvelle</button>
+        <button type="button" data-warehouse-tab="open" aria-controls="warehouse-panel-open">En cours <span id="warehouse-open-count" class="warehouse-menu-count" aria-label="0 préparation ouverte">0</span></button>
+        <button type="button" data-warehouse-tab="history" aria-controls="warehouse-panel-history">Historique <span id="warehouse-history-count" class="warehouse-menu-count" aria-label="0 saisie enregistrée">0</span></button>
+      </nav>
+
+      <div id="warehouse-panel-new" class="warehouse-tab-panel warehouse-layout" data-warehouse-panel="new" aria-labelledby="warehouse-tab-new-title" tabindex="-1">
+        <form id="task-form" class="panel task-panel preparation-panel">
+          <div class="preparation-title"><h2 id="warehouse-tab-new-title">Nouvelle préparation</h2><p>Scannez la commande ou saisissez sa référence pour identifier automatiquement le client.</p></div>
           <label for="order-reference">Commande</label>
           <div class="order-entry">
-            <input id="order-reference" class="field-input" type="text" list="order-list" autocomplete="off" placeholder="Choisir d’abord un client…" maxlength="120" required disabled aria-describedby="order-help order-reference-error">
+            <input id="order-reference" class="field-input" type="text" list="order-list" autocomplete="off" placeholder="Ex. CMD-2026-0142" maxlength="120" required aria-describedby="order-help order-reference-error" autofocus>
             <datalist id="order-list"></datalist>
-            <button id="scan-order" class="secondary scan-button" type="button" disabled><span aria-hidden="true">▣</span> Scanner</button>
+            <button id="scan-order" class="secondary scan-button" type="button"><span aria-hidden="true">▣</span> Scanner</button>
           </div>
-          <p id="order-help" class="hint search-hint">Choisissez une commande existante ou saisissez une nouvelle référence.</p>
-          <p id="order-reference-error" class="field-error task-field-error hidden"></p>
-          <div id="task-summary" class="task-summary hidden">
-            <span>COMMANDE SÉLECTIONNÉE</span><strong id="selected-order"></strong><small id="selected-client"></small>
+          <p id="order-help" class="hint search-hint">Le scan est prioritaire ; la saisie manuelle reste toujours disponible.</p>
+          <p id="order-reference-error" class="field-error task-field-error hidden" role="alert"></p>
+          <div id="task-summary" class="task-summary hidden" aria-live="polite">
+            <span>COMMANDE IDENTIFIÉE</span><strong id="selected-order"></strong><small id="selected-client"></small>
           </div>
-        </form>
-        <div class="panel timer-panel">
-          <div class="step-title"><span>2</span><div><h2>Lancer la préparation</h2><p>Le temps est suivi selon l’horloge réelle, même après actualisation.</p></div></div>
           <p class="launch-help">Chaque préparation suit son propre temps, indépendamment des autres.</p>
           <button id="timer-button" class="primary timer-button" type="button" disabled><span aria-hidden="true">▶</span> Démarrer la préparation sélectionnée</button>
-        </div>
+        </form>
       </div>
-      <section class="open-tasks-block" aria-labelledby="open-tasks-title">
+      <section id="warehouse-panel-open" class="warehouse-tab-panel open-tasks-block hidden" data-warehouse-panel="open" aria-labelledby="open-tasks-title" tabindex="-1">
         <div class="section-heading"><div><h2 id="open-tasks-title">Préparations ouvertes</h2><p>Plusieurs préparations peuvent être suivies simultanément.</p></div><span id="open-tasks-count" class="metric-pill"></span></div>
         <div id="open-tasks-list" class="open-tasks-list" aria-live="polite"></div>
       </section>
-      <div class="recent-block">
-        <div class="section-heading"><div><h2>Dernières saisies</h2><p>Temps enregistrés sur ce poste</p></div><span id="today-total" class="metric-pill"></span></div>
+      <section id="warehouse-panel-history" class="warehouse-tab-panel recent-block hidden" data-warehouse-panel="history" aria-labelledby="recent-title" tabindex="-1">
+        <div class="section-heading"><div><h2 id="recent-title">Dernières saisies</h2><p>Temps enregistrés sur ce poste</p></div><span id="today-total" class="metric-pill"></span></div>
         <div id="recent-list" class="recent-list"></div>
-      </div>
+      </section>
     </section>
 
     <section id="view-confirm" class="view hidden" aria-labelledby="confirm-title">
@@ -98,7 +91,7 @@
           <div class="eyebrow">Préparation terminée</div>
           <h1 id="confirm-title">Confirmer le temps</h1>
           <p>Vérifiez la durée avant de l’ajouter à la synthèse.</p>
-          <div class="confirm-order"><span id="confirm-client"></span><strong id="confirm-order"></strong></div>
+          <div class="confirm-order"><span><span id="confirm-client"></span><small id="confirm-operator"></small></span><strong id="confirm-order"></strong></div>
           <fieldset>
             <legend>Durée à facturer</legend>
             <div class="duration-fields">
@@ -147,22 +140,6 @@
     </section>
   </main>
 
-  <dialog id="client-dialog" class="client-dialog" aria-labelledby="client-dialog-title" aria-describedby="client-dialog-description">
-    <form id="client-form" class="client-dialog-form" novalidate>
-      <div class="dialog-heading">
-        <div><div class="eyebrow">Nouveau client fictif</div><h2 id="client-dialog-title">Ajouter un client</h2></div>
-        <button id="close-client-dialog" class="dialog-close" type="button" aria-label="Fermer">×</button>
-      </div>
-      <p id="client-dialog-description">Créez le client et sa première commande sans quitter la saisie.</p>
-      <label for="new-client-name">Nom du client</label>
-      <input id="new-client-name" type="text" autocomplete="organization" required aria-describedby="new-client-error">
-      <p id="new-client-error" class="field-error hidden"></p>
-      <label for="new-order-reference">Première référence de commande</label>
-      <input id="new-order-reference" type="text" autocomplete="off" placeholder="Ex. CMD-2026-0160" maxlength="120" required aria-describedby="new-order-error">
-      <p id="new-order-error" class="field-error hidden"></p>
-      <div class="button-row"><button id="cancel-client-dialog" class="secondary" type="button">Annuler</button><button class="primary" type="submit">Ajouter et sélectionner</button></div>
-    </form>
-  </dialog>
 
   <dialog id="scan-dialog" class="scan-dialog" aria-labelledby="scan-dialog-title" aria-describedby="scan-feedback">
     <div class="scan-dialog-content">
