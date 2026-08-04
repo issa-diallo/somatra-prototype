@@ -4,6 +4,7 @@ const DEMO_DATE = '2026-08-04';
 const RATE = 42;
 const STORAGE_KEY = 'somatra-demo-entries-v1';
 const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
+const OPEN_TASKS_STORAGE_KEY = 'somatra-demo-open-preparations-v1';
 const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
   'Client B': ['CMD-2026-0147', 'CMD-2026-0155'],
@@ -21,10 +22,8 @@ const seedEntries = [
 
 let entries = loadEntries();
 let orders = loadClients();
+let openTasks = loadOpenTasks();
 let currentView = 'login';
-let timerInterval = null;
-let timerStartedAt = 0;
-let elapsedDemoSeconds = 0;
 let pendingTask = null;
 let detailClient = null;
 let toastTimer = null;
@@ -59,6 +58,37 @@ function persistClients() {
   try { localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(orders)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
 }
 
+function loadOpenTasks() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(OPEN_TASKS_STORAGE_KEY));
+    if (!Array.isArray(saved)) return [];
+    const tasks = saved.filter((task) => task && typeof task.id === 'string' && typeof task.client === 'string' && typeof task.order === 'string')
+      .map((task) => ({
+        id: task.id,
+        client: task.client,
+        order: task.order,
+        status: task.status === 'running' ? 'running' : 'paused',
+        createdAt: Number.isFinite(task.createdAt) ? task.createdAt : Date.now(),
+        accumulatedMs: Number.isFinite(task.accumulatedMs) && task.accumulatedMs >= 0 ? task.accumulatedMs : 0,
+        lastStartedAt: Number.isFinite(task.lastStartedAt) ? task.lastStartedAt : null
+      }));
+    const running = tasks.filter((task) => task.status === 'running' && task.lastStartedAt !== null)
+      .sort((a, b) => b.lastStartedAt - a.lastStartedAt);
+    if (running.length > 1) {
+      const now = Date.now();
+      running.slice(1).forEach((task) => pauseTaskAt(task, now));
+      localStorage.setItem(OPEN_TASKS_STORAGE_KEY, JSON.stringify(tasks));
+    }
+    return tasks;
+  } catch (error) {
+    return [];
+  }
+}
+
+function persistOpenTasks() {
+  try { localStorage.setItem(OPEN_TASKS_STORAGE_KEY, JSON.stringify(openTasks)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
+}
+
 function normalizeName(value) {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
 }
@@ -71,7 +101,10 @@ function showView(name) {
   $('#switch-profile').classList.toggle('hidden', !loggedIn);
   $('#mobile-nav').classList.toggle('hidden', !loggedIn || name === 'confirm');
   $$('#mobile-nav button').forEach((button) => button.classList.toggle('active', button.dataset.action === name || (name === 'detail' && button.dataset.action === 'billing')));
-  if (name === 'warehouse') renderRecent();
+  if (name === 'warehouse') {
+    renderRecent();
+    renderOpenTasks();
+  }
   if (name === 'billing') renderBilling();
   window.scrollTo(0, 0);
   $('#app').focus({preventScroll:true});
@@ -214,79 +247,132 @@ function addClient(event) {
   toast(`${name} ajouté et commande ${order} sélectionnée`);
 }
 
-function formatClock(seconds) {
+function formatClock(milliseconds) {
+  const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
   return [hours, minutes, secs].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
+function taskElapsedMs(task, now = Date.now()) {
+  const activeMs = task.status === 'running' && task.lastStartedAt !== null ? Math.max(0, now - task.lastStartedAt) : 0;
+  return task.accumulatedMs + activeMs;
+}
+
+function pauseTaskAt(task, timestamp) {
+  if (task.status !== 'running') return;
+  task.accumulatedMs = taskElapsedMs(task, timestamp);
+  task.status = 'paused';
+  task.lastStartedAt = null;
+}
+
+function pauseOtherTasks(taskId, timestamp) {
+  openTasks.forEach((task) => {
+    if (task.id !== taskId) pauseTaskAt(task, timestamp);
+  });
+}
+
+function resetTaskSelection() {
+  $('#task-form').reset();
+  selectedClient = '';
+  renderClientSearch();
+  populateOrders();
+}
+
 function startTimer() {
   const client = selectedClient;
   const order = $('#order-select').value;
   if (!client || !order) return;
-  pendingTask = {client, order};
-  timerStartedAt = Date.now();
-  elapsedDemoSeconds = 0;
-  $('#timer-state').textContent = 'PRÉPARATION EN COURS';
-  $('#timer-state').classList.add('running');
-  $('#timer-button').innerHTML = '<span aria-hidden="true">■</span> Arrêter et confirmer';
-  $('#timer-button').classList.add('stop');
-  $('#cancel-timer').classList.remove('hidden');
-  $('#client-search').disabled = true;
-  $('#open-client-dialog').disabled = true;
-  $('#client-results').classList.add('disabled');
-  $('#order-select').disabled = true;
-  timerInterval = window.setInterval(() => {
-    elapsedDemoSeconds = Math.floor((Date.now() - timerStartedAt) / 1000 * 10);
-    $('#timer').textContent = formatClock(elapsedDemoSeconds);
-  }, 100);
+  const now = Date.now();
+  pauseOtherTasks(null, now);
+  openTasks.push({
+    id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
+    client,
+    order,
+    status: 'running',
+    createdAt: now,
+    accumulatedMs: 0,
+    lastStartedAt: now
+  });
+  persistOpenTasks();
+  resetTaskSelection();
+  renderOpenTasks();
+  toast(`${order} démarrée`);
 }
 
-function stopTimer() {
-  window.clearInterval(timerInterval);
-  timerInterval = null;
-  elapsedDemoSeconds = Math.max(1, Math.floor((Date.now() - timerStartedAt) / 1000 * 10));
-  const roundedMinutes = Math.max(1, Math.ceil(elapsedDemoSeconds / 60));
-  $('#confirm-client').textContent = pendingTask.client;
-  $('#confirm-order').textContent = pendingTask.order;
+function pauseTask(taskId) {
+  const task = openTasks.find((item) => item.id === taskId);
+  if (!task || task.status !== 'running') return;
+  pauseTaskAt(task, Date.now());
+  persistOpenTasks();
+  renderOpenTasks();
+  toast(`${task.order} mise en pause`);
+}
+
+function resumeTask(taskId) {
+  const task = openTasks.find((item) => item.id === taskId);
+  if (!task || task.status !== 'paused') return;
+  const now = Date.now();
+  pauseOtherTasks(task.id, now);
+  task.status = 'running';
+  task.lastStartedAt = now;
+  persistOpenTasks();
+  renderOpenTasks();
+  toast(`${task.order} reprise`);
+}
+
+function finishTask(taskId) {
+  const task = openTasks.find((item) => item.id === taskId);
+  if (!task) return;
+  pauseTaskAt(task, Date.now());
+  persistOpenTasks();
+  pendingTask = task;
+  const roundedMinutes = Math.max(1, Math.ceil(task.accumulatedMs / 60000));
+  $('#confirm-client').textContent = task.client;
+  $('#confirm-order').textContent = task.order;
   $('#duration-hours').value = Math.floor(roundedMinutes / 60);
   $('#duration-minutes').value = roundedMinutes % 60;
   $('#comment').value = '';
   $('#duration-error').classList.add('hidden');
-  resetTimerUI(false);
   showView('confirm');
 }
 
-function resetTimerUI(clearTask = true) {
-  if (timerInterval) window.clearInterval(timerInterval);
-  timerInterval = null;
-  timerStartedAt = 0;
-  elapsedDemoSeconds = 0;
-  $('#timer').textContent = '00:00:00';
-  $('#timer-state').textContent = 'PRÊT À DÉMARRER';
-  $('#timer-state').classList.remove('running');
-  $('#timer-button').innerHTML = '<span aria-hidden="true">▶</span> Démarrer la préparation';
-  $('#timer-button').classList.remove('stop');
-  $('#cancel-timer').classList.add('hidden');
-  $('#client-search').disabled = false;
-  $('#open-client-dialog').disabled = false;
-  $('#client-results').classList.remove('disabled');
-  $('#order-select').disabled = !selectedClient;
-  if (clearTask) pendingTask = null;
-  updateTaskSelection();
+function formatStartTime(timestamp) {
+  return new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}).format(new Date(timestamp));
 }
 
-function cancelTimer() {
-  resetTimerUI(true);
-  toast('Tâche annulée — aucune saisie créée');
+function renderOpenTasks() {
+  const list = $('#open-tasks-list');
+  const now = Date.now();
+  $('#open-tasks-count').textContent = `${openTasks.length} ouverte${openTasks.length > 1 ? 's' : ''}`;
+  list.innerHTML = openTasks.length ? openTasks.map((task) => {
+    const running = task.status === 'running';
+    return `<article class="open-task${running ? ' is-running' : ''}">
+      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
+      <dl><div><dt>Début</dt><dd>${escapeHtml(formatStartTime(task.createdAt))}</dd></div><div><dt>Durée cumulée</dt><dd class="open-task-duration" data-task-duration="${escapeHtml(task.id)}">${formatClock(taskElapsedMs(task, now))}</dd></div></dl>
+      <div class="open-task-actions">${running
+        ? `<button class="secondary" type="button" data-task-action="pause" data-task-id="${escapeHtml(task.id)}" aria-label="Mettre en pause la préparation ${escapeHtml(task.order)}">Pause</button>`
+        : `<button class="secondary" type="button" data-task-action="resume" data-task-id="${escapeHtml(task.id)}" aria-label="Reprendre la préparation ${escapeHtml(task.order)}">Reprendre</button>`}
+        <button class="primary" type="button" data-task-action="finish" data-task-id="${escapeHtml(task.id)}" aria-label="Terminer la préparation ${escapeHtml(task.order)}">Terminer</button>
+      </div>
+    </article>`;
+  }).join('') : '<div class="open-tasks-empty">Aucune préparation ouverte.</div>';
+}
+
+function refreshRunningDurations() {
+  const now = Date.now();
+  openTasks.filter((task) => task.status === 'running').forEach((task) => {
+    const output = document.querySelector(`[data-task-duration="${CSS.escape(task.id)}"]`);
+    if (output) output.textContent = formatClock(taskElapsedMs(task, now));
+  });
 }
 
 function saveEntry() {
   const hours = Number.parseInt($('#duration-hours').value, 10) || 0;
   const minutesPart = Number.parseInt($('#duration-minutes').value, 10) || 0;
   const total = hours * 60 + minutesPart;
-  if (hours < 0 || minutesPart < 0 || minutesPart > 59 || total <= 0) {
+  if (!pendingTask || hours < 0 || minutesPart < 0 || minutesPart > 59 || total <= 0) {
     $('#duration-error').classList.remove('hidden');
     return;
   }
@@ -296,12 +382,11 @@ function saveEntry() {
     minutes: total, operator: 'Opérateur démo', comment: $('#comment').value.trim(), status: 'À contrôler'
   });
   persistEntries();
+  const taskId = pendingTask.id;
   const order = pendingTask.order;
-  resetTimerUI(true);
-  $('#task-form').reset();
-  selectedClient = '';
-  renderClientSearch();
-  populateOrders();
+  openTasks = openTasks.filter((task) => task.id !== taskId);
+  persistOpenTasks();
+  pendingTask = null;
   showView('warehouse');
   toast(`${order} enregistrée dans la synthèse`);
 }
@@ -323,7 +408,7 @@ function formatDate(date) {
 function renderRecent() {
   const recent = entries.filter((entry) => entry.date === DEMO_DATE).slice().reverse();
   $('#today-total').textContent = `${formatDuration(recent.reduce((sum, entry) => sum + entry.minutes, 0))} aujourd’hui`;
-  $('#recent-list').innerHTML = recent.length ? recent.slice(0, 4).map((entry) => `<div class="recent-item"><div><strong>${escapeHtml(entry.order)}</strong><small>${escapeHtml(entry.client)}</small></div><div><small>${escapeHtml(entry.operator)}</small><small>${entry.status}</small></div><span class="duration">${formatDuration(entry.minutes)}</span></div>`).join('') : '<div class="recent-item"><span>Aucune saisie aujourd’hui.</span></div>';
+  $('#recent-list').innerHTML = recent.length ? recent.slice(0, 4).map((entry) => `<div class="recent-item"><div><strong>${escapeHtml(entry.order)}</strong><small>${escapeHtml(entry.client)}</small></div><div><small>${escapeHtml(entry.operator)}</small><small>${escapeHtml(entry.status)}</small></div><span class="duration">${formatDuration(entry.minutes)}</span></div>`).join('') : '<div class="recent-item"><span>Aucune saisie aujourd’hui.</span></div>';
 }
 
 function getFilteredEntries(clientOverride) {
@@ -378,7 +463,7 @@ function showDetail(client) {
   $('#detail-title').textContent = client;
   $('#detail-month').textContent = monthLabel($('#month-filter').value);
   $('#detail-kpis').innerHTML = [['Préparations',filtered.length],['Temps total',formatDuration(minutes)],['Montant estimé*',formatMoney(minutes / 60 * RATE)]].map(([label,value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${entry.status}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Aucune préparation.</td></tr>';
+  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Aucune préparation.</td></tr>';
   showView('detail');
 }
 
@@ -420,7 +505,7 @@ function toast(message) {
 
 $$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
 $$('[data-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.action)));
-$('#switch-profile').addEventListener('click', () => { if (timerInterval && !window.confirm('Un chronomètre est actif. Quitter et annuler cette tâche ?')) return; resetTimerUI(true); showView('login'); });
+$('#switch-profile').addEventListener('click', () => showView('login'));
 $('#client-search').addEventListener('input', handleClientSearch);
 $('#client-search').addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
@@ -441,12 +526,20 @@ $('#client-dialog').addEventListener('cancel', (event) => {
   closeClientDialog(true);
 });
 $('#order-select').addEventListener('change', updateTaskSelection);
-$('#timer-button').addEventListener('click', () => timerInterval ? stopTimer() : startTimer());
-$('#cancel-timer').addEventListener('click', cancelTimer);
+$('#timer-button').addEventListener('click', startTimer);
+$('#open-tasks-list').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-task-action]');
+  if (!button) return;
+  const {taskAction, taskId} = button.dataset;
+  if (taskAction === 'pause') pauseTask(taskId);
+  if (taskAction === 'resume') resumeTask(taskId);
+  if (taskAction === 'finish') finishTask(taskId);
+});
 $('#save-entry').addEventListener('click', saveEntry);
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
 $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
+window.setInterval(refreshRunningDurations, 1000);
 
 renderClientSearch();
 updateBillingClientFilter();
