@@ -46,13 +46,13 @@
     <section id="view-warehouse" class="view hidden" aria-labelledby="warehouse-title">
       <div class="page-heading">
         <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Préparations</h1><p><span id="warehouse-greeting">Magasinier démo</span> <span class="status-dot"></span> Poste actif</p></div>
-        <button class="secondary desktop-only" type="button" data-action="billing">Voir la facturation →</button>
+
       </div>
 
       <nav class="warehouse-menu" aria-label="Menu des préparations">
         <button type="button" data-warehouse-tab="new" aria-current="page" aria-controls="warehouse-panel-new">Nouvelle</button>
         <button type="button" data-warehouse-tab="open" aria-controls="warehouse-panel-open">En cours <span id="warehouse-open-count" class="warehouse-menu-count" aria-label="0 préparation ouverte">0</span></button>
-        <button type="button" data-warehouse-tab="history" aria-controls="warehouse-panel-history">Historique <span id="warehouse-history-count" class="warehouse-menu-count" aria-label="0 saisie enregistrée">0</span></button>
+        <button type="button" data-warehouse-tab="tracking" aria-controls="warehouse-panel-tracking">Suivi <span id="warehouse-tracking-count" class="warehouse-menu-count" aria-label="0 saisie affichée">0</span></button>
       </nav>
 
       <div id="warehouse-panel-new" class="warehouse-tab-panel warehouse-layout" data-warehouse-panel="new" aria-labelledby="warehouse-tab-new-title" tabindex="-1">
@@ -76,9 +76,18 @@
         <div class="section-heading"><div><h2 id="open-tasks-title">Préparations ouvertes</h2><p>Plusieurs préparations peuvent être suivies simultanément.</p></div><span id="open-tasks-count" class="metric-pill"></span></div>
         <div id="open-tasks-list" class="open-tasks-list" aria-live="polite"></div>
       </section>
-      <section id="warehouse-panel-history" class="warehouse-tab-panel recent-block hidden" data-warehouse-panel="history" aria-labelledby="recent-title" tabindex="-1">
-        <div class="section-heading"><div><h2 id="recent-title">Dernières saisies</h2><p>Temps enregistrés sur ce poste</p></div><span id="today-total" class="metric-pill"></span></div>
-        <div id="recent-list" class="recent-list"></div>
+      <section id="warehouse-panel-tracking" class="warehouse-tab-panel tracking-block hidden" data-warehouse-panel="tracking" aria-labelledby="tracking-title" tabindex="-1">
+        <div class="section-heading"><div><h2 id="tracking-title">Suivi des préparations</h2><p>Consultez les temps enregistrés sans information financière.</p></div></div>
+        <div class="tracking-filters panel" aria-label="Filtres du suivi">
+          <label>Mois<select id="tracking-month-filter"></select></label>
+          <label>Client/commande<select id="tracking-client-filter"></select></label>
+          <label>Préparation<select id="tracking-order-filter"></select></label>
+        </div>
+        <div id="tracking-kpis" class="kpi-grid tracking-kpis"></div>
+        <div class="panel tracking-results">
+          <div class="section-heading"><div><h2>Saisies enregistrées</h2><p id="tracking-result-count" aria-live="polite"></p></div></div>
+          <div id="tracking-list" class="tracking-list"></div>
+        </div>
       </section>
     </section>
 
@@ -92,7 +101,7 @@
           <p>Vérifiez la durée avant de l’ajouter à la synthèse.</p>
           <div class="confirm-order"><span><span id="confirm-client"></span><small id="confirm-operator"></small></span><strong id="confirm-order"></strong></div>
           <fieldset>
-            <legend>Durée à facturer</legend>
+            <legend>Durée enregistrée</legend>
             <div class="duration-fields">
               <label><input id="duration-hours" type="number" min="0" max="23" inputmode="numeric"><span>heures</span></label>
               <strong>:</strong>
@@ -111,7 +120,7 @@
     <section id="view-billing" class="view hidden" aria-labelledby="billing-title">
       <div class="page-heading billing-heading">
         <div><div class="eyebrow">Espace facturation</div><h1 id="billing-title">Synthèse mensuelle</h1><p>Contrôle des temps de préparation avant export.</p></div>
-        <button class="secondary desktop-only" type="button" data-action="warehouse">← Saisie magasinier</button>
+        <button class="secondary desktop-only" type="button" data-action="profile-select">Changer de profil</button>
       </div>
       <div class="filter-bar panel">
         <label>Mois<select id="month-filter"><option value="2026-08">Août 2026</option><option value="2026-07">Juillet 2026</option></select></label>
@@ -153,10 +162,7 @@
     </div>
   </dialog>
 
-  <nav id="mobile-nav" class="mobile-nav hidden" aria-label="Navigation principale">
-    <button type="button" data-action="warehouse"><span>▦</span>Saisie</button>
-    <button type="button" data-action="billing"><span>▥</span>Facturation</button>
-  </nav>
+  <nav id="mobile-nav" class="mobile-nav hidden" aria-label="Navigation principale"></nav>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js?v=__SOMATRA_ASSET_VERSION__"></script>
 </body>

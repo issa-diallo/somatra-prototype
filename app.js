@@ -36,6 +36,7 @@ let scanStream = null;
 let scanFrame = null;
 let scanSession = 0;
 let warehouseTab = 'new';
+let activeProfile = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -120,9 +121,9 @@ function showView(name) {
   const loggedIn = name !== 'login';
   $('#switch-profile').classList.toggle('hidden', !loggedIn);
   $('#mobile-nav').classList.toggle('hidden', !loggedIn || name === 'confirm');
-  $$('#mobile-nav button').forEach((button) => button.classList.toggle('active', button.dataset.action === name || (name === 'detail' && button.dataset.action === 'billing')));
+  renderMobileNav(name);
   if (name === 'warehouse') {
-    renderRecent();
+    renderTracking();
     renderOpenTasks();
     renderWarehouseTab();
   }
@@ -133,18 +134,40 @@ function showView(name) {
 }
 
 function navigate(action) {
+  if (action === 'profile-select') {
+    activeProfile = null;
+    showView('login');
+    return;
+  }
   if (action === 'home') showView(currentView === 'login' ? 'login' : (currentView === 'warehouse' || currentView === 'confirm' ? 'warehouse' : 'billing'));
   if (action === 'warehouse') {
+    if (activeProfile !== 'warehouse') return;
     warehouseTab = currentView === 'confirm' ? 'open' : 'new';
     showView('warehouse');
   }
-  if (action === 'billing') showView('billing');
+  if (action === 'billing' && activeProfile === 'billing') showView('billing');
 }
 
 function setProfile(profile) {
+  activeProfile = profile;
   if (profile === 'warehouse') warehouseTab = 'new';
   showView(profile === 'warehouse' ? 'warehouse' : 'billing');
   toast(profile === 'warehouse' ? 'Profil magasinier activé' : 'Profil facturation activé');
+}
+
+function renderMobileNav(name) {
+  const nav = $('#mobile-nav');
+  if (!activeProfile) {
+    nav.innerHTML = '';
+    return;
+  }
+  if (activeProfile === 'warehouse') {
+    nav.innerHTML = '<button type="button" data-mobile-warehouse-tab="new"><span>＋</span>Nouvelle</button><button type="button" data-mobile-warehouse-tab="open"><span>◷</span>En cours</button><button type="button" data-mobile-warehouse-tab="tracking"><span>▤</span>Suivi</button><button type="button" data-action="profile-select"><span>⇄</span>Profil</button>';
+    $$('[data-mobile-warehouse-tab]').forEach((button) => button.classList.toggle('active', name === 'warehouse' && button.dataset.mobileWarehouseTab === warehouseTab));
+  } else {
+    nav.innerHTML = '<button type="button" data-action="billing"><span>▥</span>Facturation</button><button type="button" data-action="profile-select"><span>⇄</span>Changer de profil</button>';
+    nav.querySelector('[data-action="billing"]').classList.toggle('active', name === 'billing' || name === 'detail');
+  }
 }
 
 function renderWarehouseTab() {
@@ -155,12 +178,13 @@ function renderWarehouseTab() {
     else button.removeAttribute('aria-current');
   });
   $$('[data-warehouse-panel]').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.warehousePanel !== warehouseTab));
+  renderMobileNav('warehouse');
 }
 
 function setWarehouseTab(tab, moveFocus = false) {
-  if (!['new', 'open', 'history'].includes(tab)) return;
+  if (!['new', 'open', 'tracking'].includes(tab)) return;
   warehouseTab = tab;
-  renderRecent();
+  renderTracking();
   renderOpenTasks();
   renderWarehouseTab();
   if (!moveFocus) return;
@@ -440,9 +464,9 @@ function saveEntry() {
   openTasks = openTasks.filter((task) => task.id !== taskId);
   persistOpenTasks();
   pendingTask = null;
-  warehouseTab = 'history';
+  warehouseTab = 'tracking';
   showView('warehouse');
-  toast(`${order} enregistrée dans la synthèse`);
+  toast(`${order} enregistrée dans le suivi`);
 }
 
 function formatDuration(minutes) {
@@ -459,12 +483,43 @@ function formatDate(date) {
   return new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'short', year:'numeric'}).format(new Date(`${date}T12:00:00`));
 }
 
-function renderRecent() {
-  const recent = entries.filter((entry) => entry.date === DEMO_DATE).slice().reverse();
-  $('#warehouse-history-count').textContent = recent.length;
-  $('#warehouse-history-count').setAttribute('aria-label', `${recent.length} saisie${recent.length > 1 ? 's' : ''} enregistrée${recent.length > 1 ? 's' : ''}`);
-  $('#today-total').textContent = `${formatDuration(recent.reduce((sum, entry) => sum + entry.minutes, 0))} aujourd’hui`;
-  $('#recent-list').innerHTML = recent.length ? recent.slice(0, 4).map((entry) => `<div class="recent-item"><div><strong>${escapeHtml(entry.order)}</strong><small>${escapeHtml(entry.client)}</small></div><div><small>${escapeHtml(entry.operator)}</small><small>${escapeHtml(entry.status)}</small></div><span class="duration">${formatDuration(entry.minutes)}</span></div>`).join('') : '<div class="recent-item"><span>Aucune saisie aujourd’hui.</span></div>';
+function updateSelectOptions(select, options, allLabel) {
+  const current = select.value || 'all';
+  select.innerHTML = `<option value="all">${escapeHtml(allLabel)}</option>` + options.map(({value, label}) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  select.value = current === 'all' || options.some((option) => option.value === current) ? current : 'all';
+}
+
+function updateTrackingFilters() {
+  const months = [...new Set(entries.map((entry) => entry.date.slice(0, 7)))].sort().reverse();
+  const clients = [...new Set(entries.map((entry) => entry.client))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const preparations = [...new Set(entries.map((entry) => entry.order))].sort((a, b) => a.localeCompare(b, 'fr'));
+  updateSelectOptions($('#tracking-month-filter'), months.map((month) => ({value:month, label:monthLabel(month)})), 'Tous les mois');
+  updateSelectOptions($('#tracking-client-filter'), clients.map((client) => ({value:client, label:client})), 'Tous les clients/commandes');
+  updateSelectOptions($('#tracking-order-filter'), preparations.map((order) => ({value:order, label:order})), 'Toutes les préparations');
+}
+
+function getTrackingEntries() {
+  const month = $('#tracking-month-filter').value;
+  const client = $('#tracking-client-filter').value;
+  const order = $('#tracking-order-filter').value;
+  return entries.filter((entry) => (month === 'all' || entry.date.startsWith(month)) && (client === 'all' || entry.client === client) && (order === 'all' || entry.order === order));
+}
+
+function renderTracking() {
+  updateTrackingFilters();
+  const filtered = getTrackingEntries().slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const uniqueClients = new Set(filtered.map((entry) => entry.client)).size;
+  const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
+  $('#warehouse-tracking-count').textContent = filtered.length;
+  $('#warehouse-tracking-count').setAttribute('aria-label', `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`);
+  $('#tracking-kpis').innerHTML = [
+    ['Clients/commandes uniques', uniqueClients], ['Préparations', filtered.length], ['Temps total', formatDuration(minutes)]
+  ].map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  $('#tracking-result-count').textContent = `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`;
+  $('#tracking-list').innerHTML = filtered.length ? filtered.map((entry) => `<article class="tracking-item">
+    <div class="tracking-item-heading"><div><span>Client/commande</span><strong>${escapeHtml(entry.client)}</strong></div><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></div>
+    <dl><div><dt>Référence</dt><dd>${escapeHtml(entry.order)}</dd></div><div><dt>Date</dt><dd>${escapeHtml(formatDate(entry.date))}</dd></div><div><dt>Durée</dt><dd class="duration">${formatDuration(entry.minutes)}</dd></div></dl>
+  </article>`).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
 }
 
 function getFilteredEntries(clientOverride) {
@@ -560,9 +615,14 @@ function toast(message) {
 }
 
 $$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
-$$('[data-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.action)));
+document.addEventListener('click', (event) => {
+  const actionButton = event.target.closest('[data-action]');
+  if (actionButton) navigate(actionButton.dataset.action);
+  const mobileTab = event.target.closest('[data-mobile-warehouse-tab]');
+  if (mobileTab && activeProfile === 'warehouse') setWarehouseTab(mobileTab.dataset.mobileWarehouseTab, true);
+});
 $$('[data-warehouse-tab]').forEach((button) => button.addEventListener('click', () => setWarehouseTab(button.dataset.warehouseTab)));
-$('#switch-profile').addEventListener('click', () => showView('login'));
+$('#switch-profile').addEventListener('click', () => navigate('profile-select'));
 $('#task-form').addEventListener('submit', (event) => event.preventDefault());
 $('#order-reference').addEventListener('input', updateTaskSelection);
 $('#scan-order').addEventListener('click', openScanner);
@@ -584,6 +644,7 @@ $('#open-tasks-list').addEventListener('click', (event) => {
 });
 $('#save-entry').addEventListener('click', saveEntry);
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
+['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderTracking));
 $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
 window.setInterval(refreshRunningDurations, 1000);
