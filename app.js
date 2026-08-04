@@ -182,7 +182,7 @@ function renderClientSearch() {
   const query = $('#client-search').value;
   const normalizedQuery = normalizeName(query);
   const clients = Object.keys(orders).sort((a, b) => a.localeCompare(b, 'fr'));
-  const matches = normalizedQuery ? clients.filter((client) => normalizeName(client).includes(normalizedQuery)) : clients;
+  const matches = normalizedQuery ? clients.filter((client) => normalizeName(client).includes(normalizedQuery)) : [];
   const exactMatch = normalizedQuery && clients.some((client) => normalizeName(client) === normalizedQuery);
   const resultBox = $('#client-results');
 
