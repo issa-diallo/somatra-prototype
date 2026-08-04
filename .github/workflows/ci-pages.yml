@@ -52,17 +52,33 @@ jobs:
               def __init__(self):
                   super().__init__()
                   self.ids = []
+                  self.asset_urls = []
               def handle_starttag(self, tag, attrs):
                   values = dict(attrs)
                   if "id" in values:
                       self.ids.append(values["id"])
+                  for attribute in ("href", "src"):
+                      if attribute in values:
+                          self.asset_urls.append(values[attribute])
 
           parser = Parser()
           parser.feed(Path("index.html").read_text(encoding="utf-8"))
           duplicates = sorted({item for item in parser.ids if parser.ids.count(item) > 1})
           if duplicates:
               raise SystemExit(f"Identifiants HTML dupliqués : {duplicates}")
+          placeholder = "__SOMATRA_ASSET_VERSION__"
+          expected_assets = ("app.js", "styles.css", "assets/somatra-logo.jpg")
+          missing_versions = [
+              asset
+              for asset in expected_assets
+              if f"{asset}?v={placeholder}" not in parser.asset_urls
+          ]
+          if missing_versions:
+              raise SystemExit(
+                  "Version de cache absente des URL : " + ", ".join(missing_versions)
+              )
           print(f"Structure HTML valide : {len(parser.ids)} identifiants uniques")
+          print("Version de cache présente sur app.js, styles.css et le logo")
           PY
 
       - name: Tester le service HTTP
@@ -102,10 +118,29 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Préparer le site
+        env:
+          DEPLOY_VERSION: ${{ github.sha }}
         run: |
           mkdir _site
           cp index.html styles.css app.js .nojekyll _site/
           cp -R assets _site/
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          placeholder = "__SOMATRA_ASSET_VERSION__"
+          deploy_version = os.environ["DEPLOY_VERSION"]
+          index_path = Path("_site/index.html")
+          html = index_path.read_text(encoding="utf-8")
+          if placeholder not in html:
+              raise SystemExit("Placeholder de version absent avant génération")
+          html = html.replace(placeholder, deploy_version)
+          index_path.write_text(html, encoding="utf-8")
+          if placeholder in index_path.read_text(encoding="utf-8"):
+              raise SystemExit("Placeholder de version encore présent dans l’artefact")
+          print(f"Artefact versionné avec le commit {deploy_version}")
+          print("Placeholder de version absent de _site/index.html")
+          PY
 
       - name: Téléverser le site
         uses: actions/upload-pages-artifact@v3
