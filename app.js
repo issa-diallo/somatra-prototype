@@ -43,7 +43,10 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 function loadEntries() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : seedEntries.map((entry) => ({...entry}));
+    if (!saved) return seedEntries.map((entry) => ({...entry}));
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return seedEntries.map((entry) => ({...entry}));
+    return migrateLegacyClients(parsed, STORAGE_KEY);
   } catch (error) {
     return seedEntries.map((entry) => ({...entry}));
   }
@@ -64,7 +67,7 @@ function loadClients() {
 
 function loadOpenTasks() {
   try {
-    const saved = JSON.parse(localStorage.getItem(OPEN_TASKS_STORAGE_KEY));
+    const saved = migrateLegacyClients(JSON.parse(localStorage.getItem(OPEN_TASKS_STORAGE_KEY)), OPEN_TASKS_STORAGE_KEY);
     if (!Array.isArray(saved)) return [];
     return saved.filter((task) => {
       if (!task || typeof task.id !== 'string' || typeof task.client !== 'string' || typeof task.order !== 'string') return false;
@@ -92,6 +95,22 @@ function persistOpenTasks() {
 
 function normalizeUserInput(value) {
   return String(value).trim().replace(/\s+/g, ' ');
+}
+
+function migrateLegacyClients(records, storageKey) {
+  if (!Array.isArray(records)) return records;
+  let migrated = false;
+  const result = records.map((record) => {
+    if (!record || record.client !== UNIDENTIFIED_CLIENT || typeof record.order !== 'string') return record;
+    const order = normalizeUserInput(record.order);
+    if (!order || order.length > ORDER_REFERENCE_MAX_LENGTH) return record;
+    migrated = true;
+    return {...record, client: order, order};
+  });
+  if (migrated) {
+    try { localStorage.setItem(storageKey, JSON.stringify(result)); } catch (error) { /* La migration reste appliquée en mémoire. */ }
+  }
+  return result;
 }
 
 function showView(name) {
@@ -315,7 +334,7 @@ function startTimer() {
   const now = Date.now();
   openTasks.push({
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
-    client: UNIDENTIFIED_CLIENT,
+    client: order,
     order,
     operator: AUTHENTICATED_OPERATOR,
     status: 'running',
