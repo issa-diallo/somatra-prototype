@@ -5,6 +5,10 @@ const RATE = 42;
 const STORAGE_KEY = 'somatra-demo-entries-v1';
 const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
 const OPEN_TASKS_STORAGE_KEY = 'somatra-demo-open-preparations-v1';
+const OPERATOR_STORAGE_KEY = 'somatra-demo-operator-v1';
+const LEGACY_OPERATOR = 'Magasinier non renseigné (ancienne tâche)';
+const OPERATOR_MAX_LENGTH = 80;
+const ORDER_REFERENCE_MAX_LENGTH = 120;
 const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
   'Client B': ['CMD-2026-0147', 'CMD-2026-0155'],
@@ -29,6 +33,9 @@ let detailClient = null;
 let toastTimer = null;
 let selectedClient = '';
 let clientDialogOpener = null;
+let scanStream = null;
+let scanFrame = null;
+let scanSession = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -58,15 +65,33 @@ function persistClients() {
   try { localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(orders)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
 }
 
+function loadOperator() {
+  try {
+    const operator = normalizeUserInput(localStorage.getItem(OPERATOR_STORAGE_KEY) || '');
+    return operator.length <= OPERATOR_MAX_LENGTH ? operator : '';
+  } catch (error) { return ''; }
+}
+
+function persistOperator(value) {
+  const operator = normalizeUserInput(value);
+  if (operator.length > OPERATOR_MAX_LENGTH) return;
+  try { localStorage.setItem(OPERATOR_STORAGE_KEY, operator); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
+}
+
 function loadOpenTasks() {
   try {
     const saved = JSON.parse(localStorage.getItem(OPEN_TASKS_STORAGE_KEY));
     if (!Array.isArray(saved)) return [];
-    return saved.filter((task) => task && typeof task.id === 'string' && typeof task.client === 'string' && typeof task.order === 'string')
+    return saved.filter((task) => {
+      if (!task || typeof task.id !== 'string' || typeof task.client !== 'string' || typeof task.order !== 'string') return false;
+      const order = normalizeUserInput(task.order);
+      return Boolean(order && order.length <= ORDER_REFERENCE_MAX_LENGTH);
+    })
       .map((task) => ({
         id: task.id,
         client: task.client,
-        order: task.order,
+        order: normalizeUserInput(task.order),
+        operator: typeof task.operator === 'string' && normalizeUserInput(task.operator) && normalizeUserInput(task.operator).length <= OPERATOR_MAX_LENGTH ? normalizeUserInput(task.operator) : LEGACY_OPERATOR,
         status: task.status === 'running' ? 'running' : 'paused',
         createdAt: Number.isFinite(task.createdAt) ? task.createdAt : Date.now(),
         accumulatedMs: Number.isFinite(task.accumulatedMs) && task.accumulatedMs >= 0 ? task.accumulatedMs : 0,
@@ -83,6 +108,10 @@ function persistOpenTasks() {
 
 function normalizeName(value) {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
+}
+
+function normalizeUserInput(value) {
+  return String(value).trim().replace(/\s+/g, ' ');
 }
 
 function showView(name) {
@@ -115,17 +144,24 @@ function setProfile(profile) {
 
 function populateOrders(selectedOrder = '') {
   const client = selectedClient;
-  const select = $('#order-select');
-  select.innerHTML = client ? '<option value="">Sélectionner une commande…</option>' + orders[client].map((order) => `<option>${escapeHtml(order)}</option>`).join('') : '<option value="">Choisir d’abord un client…</option>';
-  select.disabled = !client;
-  select.value = selectedOrder;
+  const input = $('#order-reference');
+  $('#order-list').innerHTML = client ? orders[client].map((order) => `<option value="${escapeHtml(order)}"></option>`).join('') : '';
+  input.disabled = !client;
+  input.placeholder = client ? 'Ex. CMD-2026-0160' : 'Choisir d’abord un client…';
+  input.value = selectedOrder;
+  $('#scan-order').disabled = !client;
   updateTaskSelection();
 }
 
 function updateTaskSelection() {
   const client = selectedClient;
-  const order = $('#order-select').value;
-  const complete = Boolean(client && order);
+  const order = normalizeUserInput($('#order-reference').value);
+  const operator = normalizeUserInput($('#operator-name').value);
+  const orderValid = order.length <= ORDER_REFERENCE_MAX_LENGTH;
+  const operatorValid = operator.length <= OPERATOR_MAX_LENGTH;
+  const complete = Boolean(operator && operatorValid && client && order && orderValid);
+  if (orderValid) clearTaskFieldError('order-reference', 'order-reference-error');
+  else showTaskFieldError('order-reference', 'order-reference-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
   $('#task-summary').classList.toggle('hidden', !complete);
   $('#timer-button').disabled = !complete;
   if (complete) {
@@ -139,7 +175,7 @@ function selectClient(client) {
   $('#client-search').value = client;
   renderClientSearch();
   populateOrders();
-  $('#order-select').focus();
+  $('#order-reference').focus();
 }
 
 function renderClientSearch() {
@@ -188,6 +224,126 @@ function closeClientDialog(showFeedback = false) {
   if (showFeedback) toast('Ajout du client annulé');
 }
 
+function updateOperator() {
+  const operator = normalizeUserInput($('#operator-name').value);
+  const valid = operator.length <= OPERATOR_MAX_LENGTH;
+  if (valid) {
+    clearTaskFieldError('operator-name', 'operator-error');
+    persistOperator(operator);
+  } else {
+    showTaskFieldError('operator-name', 'operator-error', `Le nom du magasinier ne peut pas dépasser ${OPERATOR_MAX_LENGTH} caractères.`);
+  }
+  $('#warehouse-greeting').textContent = operator && valid ? `Bonjour, ${operator}` : 'Renseignez le magasinier';
+  updateTaskSelection();
+}
+
+function clearTaskFieldError(inputId, errorId) {
+  $(`#${errorId}`).textContent = '';
+  $(`#${errorId}`).classList.add('hidden');
+  $(`#${inputId}`).removeAttribute('aria-invalid');
+}
+
+function showTaskFieldError(inputId, errorId, message) {
+  $(`#${errorId}`).textContent = message;
+  $(`#${errorId}`).classList.remove('hidden');
+  $(`#${inputId}`).setAttribute('aria-invalid', 'true');
+}
+
+function stopScanning() {
+  scanSession += 1;
+  if (scanFrame !== null) cancelAnimationFrame(scanFrame);
+  scanFrame = null;
+  if (scanStream) scanStream.getTracks().forEach((track) => track.stop());
+  scanStream = null;
+  const video = $('#scan-video');
+  video.pause();
+  video.srcObject = null;
+}
+
+function scanErrorMessage(error) {
+  if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) return 'Accès à la caméra refusé. Autorisez-la dans le navigateur ou saisissez la référence manuellement.';
+  if (error && (error.name === 'NotFoundError' || error.name === 'OverconstrainedError')) return 'Aucune caméra compatible n’est disponible. Saisissez la référence manuellement.';
+  return 'Le scan a rencontré une erreur. La caméra a été arrêtée ; saisissez la référence manuellement.';
+}
+
+function failScan(message) {
+  stopScanning();
+  $('#scan-feedback').textContent = message;
+  $('#scan-feedback').classList.add('error');
+}
+
+async function openScanner() {
+  const dialog = $('#scan-dialog');
+  $('#scan-feedback').classList.remove('error');
+  $('#scan-feedback').textContent = 'Initialisation de la caméra…';
+  dialog.showModal();
+
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    failScan('La caméra n’est pas accessible dans ce navigateur. Saisissez la référence manuellement.');
+    return;
+  }
+  if (typeof window.BarcodeDetector !== 'function') {
+    failScan('Le scan de codes-barres et QR n’est pas pris en charge par ce navigateur. Saisissez la référence manuellement.');
+    return;
+  }
+
+  const session = ++scanSession;
+  try {
+    const detector = new window.BarcodeDetector();
+    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: 'environment'}}, audio: false});
+    if (session !== scanSession || !dialog.open) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    scanStream = stream;
+    const video = $('#scan-video');
+    video.srcObject = stream;
+    await video.play();
+    if (session !== scanSession) return;
+    $('#scan-feedback').textContent = 'Placez un code-barres ou un QR code dans le cadre.';
+
+    const detect = async () => {
+      if (session !== scanSession || !scanStream) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length) {
+          const detectedValue = codes.find((code) => typeof code.rawValue === 'string')?.rawValue ?? '';
+          const value = normalizeUserInput(detectedValue);
+          if (!value) {
+            failScan('Le code détecté ne contient aucune référence. Fermez le scanner et saisissez la référence manuellement.');
+            return;
+          }
+          if (value.length > ORDER_REFERENCE_MAX_LENGTH) {
+            failScan(`La référence détectée dépasse ${ORDER_REFERENCE_MAX_LENGTH} caractères. Fermez le scanner et saisissez une référence plus courte manuellement.`);
+            return;
+          }
+          stopScanning();
+          if (dialog.open) dialog.close();
+          $('#order-reference').value = value;
+          updateTaskSelection();
+          $('#order-reference').focus();
+          toast(`Référence ${value} scannée — démarrez-la quand vous êtes prêt`);
+          return;
+        }
+        scanFrame = requestAnimationFrame(detect);
+      } catch (error) {
+        failScan(scanErrorMessage(error));
+      }
+    };
+    scanFrame = requestAnimationFrame(detect);
+  } catch (error) {
+    failScan(scanErrorMessage(error));
+  }
+}
+
+function closeScanner() {
+  const dialog = $('#scan-dialog');
+  stopScanning();
+  if (dialog.open) dialog.close();
+  $('#order-reference').focus();
+  toast('Scan annulé — saisie manuelle disponible');
+}
+
 function clearClientErrors() {
   ['new-client-error', 'new-order-error'].forEach((id) => {
     $(`#${id}`).textContent = '';
@@ -220,6 +376,9 @@ function addClient(event) {
   }
   if (!order) {
     showClientError('new-order-reference', 'new-order-error', 'Indiquez une première référence de commande.');
+    firstInvalid ||= $('#new-order-reference');
+  } else if (order.length > ORDER_REFERENCE_MAX_LENGTH) {
+    showClientError('new-order-reference', 'new-order-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
     firstInvalid ||= $('#new-order-reference');
   }
   if (firstInvalid) {
@@ -260,21 +419,54 @@ function pauseTaskAt(task, timestamp) {
 }
 
 function resetTaskSelection() {
-  $('#task-form').reset();
   selectedClient = '';
+  $('#client-search').value = '';
+  $('#order-reference').value = '';
   renderClientSearch();
   populateOrders();
 }
 
 function startTimer() {
   const client = selectedClient;
-  const order = $('#order-select').value;
-  if (!client || !order) return;
+  const order = normalizeUserInput($('#order-reference').value);
+  const operator = normalizeUserInput($('#operator-name').value);
+  if (!operator) {
+    showTaskFieldError('operator-name', 'operator-error', 'Indiquez le nom du magasinier.');
+    $('#operator-name').focus();
+    toast('Indiquez le nom du magasinier');
+    return;
+  }
+  if (operator.length > OPERATOR_MAX_LENGTH) {
+    showTaskFieldError('operator-name', 'operator-error', `Le nom du magasinier ne peut pas dépasser ${OPERATOR_MAX_LENGTH} caractères.`);
+    $('#operator-name').focus();
+    return;
+  }
+  clearTaskFieldError('operator-name', 'operator-error');
+  if (!client) return;
+  if (!order) {
+    showTaskFieldError('order-reference', 'order-reference-error', 'Indiquez une référence de commande.');
+    $('#order-reference').focus();
+    return;
+  }
+  if (order.length > ORDER_REFERENCE_MAX_LENGTH) {
+    showTaskFieldError('order-reference', 'order-reference-error', `La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`);
+    $('#order-reference').focus();
+    return;
+  }
+  clearTaskFieldError('order-reference', 'order-reference-error');
+  $('#operator-name').value = operator;
+  $('#order-reference').value = order;
+  persistOperator(operator);
+  if (!orders[client].some((reference) => normalizeName(reference) === normalizeName(order))) {
+    orders[client].push(order);
+    persistClients();
+  }
   const now = Date.now();
   openTasks.push({
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
     client,
     order,
+    operator,
     status: 'running',
     createdAt: now,
     accumulatedMs: 0,
@@ -333,7 +525,7 @@ function renderOpenTasks() {
   list.innerHTML = openTasks.length ? openTasks.map((task) => {
     const running = task.status === 'running';
     return `<article class="open-task${running ? ' is-running' : ''}">
-      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
+      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)} · ${escapeHtml(task.operator || LEGACY_OPERATOR)}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
       <dl><div><dt>Début</dt><dd>${escapeHtml(formatStartTime(task.createdAt))}</dd></div><div><dt>Durée cumulée</dt><dd class="open-task-duration" data-task-duration="${escapeHtml(task.id)}">${formatClock(taskElapsedMs(task, now))}</dd></div></dl>
       <div class="open-task-actions">${running
         ? `<button class="secondary" type="button" data-task-action="pause" data-task-id="${escapeHtml(task.id)}" aria-label="Mettre en pause la préparation ${escapeHtml(task.order)}">Pause</button>`
@@ -363,7 +555,7 @@ function saveEntry() {
   $('#duration-error').classList.add('hidden');
   entries.push({
     id: Date.now(), date: DEMO_DATE, client: pendingTask.client, order: pendingTask.order,
-    minutes: total, operator: 'Opérateur démo', comment: $('#comment').value.trim(), status: 'À contrôler'
+    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, comment: $('#comment').value.trim(), status: 'À contrôler'
   });
   persistEntries();
   const taskId = pendingTask.id;
@@ -501,6 +693,7 @@ $('#client-search').addEventListener('keydown', (event) => {
   }
 });
 $('#task-form').addEventListener('submit', (event) => event.preventDefault());
+$('#operator-name').addEventListener('input', updateOperator);
 $('#open-client-dialog').addEventListener('click', openClientDialog);
 $('#client-form').addEventListener('submit', addClient);
 $('#close-client-dialog').addEventListener('click', () => closeClientDialog(true));
@@ -509,7 +702,15 @@ $('#client-dialog').addEventListener('cancel', (event) => {
   event.preventDefault();
   closeClientDialog(true);
 });
-$('#order-select').addEventListener('change', updateTaskSelection);
+$('#order-reference').addEventListener('input', updateTaskSelection);
+$('#scan-order').addEventListener('click', openScanner);
+$('#close-scan-dialog').addEventListener('click', closeScanner);
+$('#cancel-scan').addEventListener('click', closeScanner);
+$('#scan-dialog').addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeScanner();
+});
+$('#scan-dialog').addEventListener('close', stopScanning);
 $('#timer-button').addEventListener('click', startTimer);
 $('#open-tasks-list').addEventListener('click', (event) => {
   const button = event.target.closest('[data-task-action]');
@@ -525,6 +726,8 @@ $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
 window.setInterval(refreshRunningDurations, 1000);
 
+$('#operator-name').value = loadOperator();
+updateOperator();
 renderClientSearch();
 updateBillingClientFilter();
 showView('login');
