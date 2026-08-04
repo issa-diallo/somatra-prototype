@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#102a43">
+  <title>Somatra — Suivi des temps logistiques</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <button class="brand" type="button" data-action="home" aria-label="Accueil Somatra">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span><strong>SOMATRA</strong><small>Suivi des temps logistiques</small></span>
+    </button>
+    <div class="header-actions">
+      <span class="demo-badge">Démonstration — données fictives</span>
+      <button id="switch-profile" class="icon-button hidden" type="button" title="Changer de profil" aria-label="Changer de profil">⇄</button>
+    </div>
+  </header>
+
+  <main id="app" tabindex="-1">
+    <section id="view-login" class="view login-view" aria-labelledby="login-title">
+      <div class="login-panel">
+        <div class="eyebrow">Prototype interactif</div>
+        <h1 id="login-title">Bienvenue sur Somatra</h1>
+        <p class="lead">Choisissez un profil pour lancer le parcours de démonstration.</p>
+        <div class="profile-grid">
+          <button class="profile-card" type="button" data-login="warehouse">
+            <span class="profile-icon" aria-hidden="true">▦</span>
+            <span><strong>Magasinier</strong><small>Enregistrer un temps de préparation</small></span>
+            <span class="arrow">→</span>
+          </button>
+          <button class="profile-card" type="button" data-login="billing">
+            <span class="profile-icon billing" aria-hidden="true">€</span>
+            <span><strong>Facturation</strong><small>Contrôler et exporter les temps</small></span>
+            <span class="arrow">→</span>
+          </button>
+        </div>
+        <div class="notice"><strong>Environnement de démonstration</strong><br>Aucune authentification, aucune donnée réelle, aucune transmission serveur.</div>
+      </div>
+    </section>
+
+    <section id="view-warehouse" class="view hidden" aria-labelledby="warehouse-title">
+      <div class="page-heading">
+        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Nouvelle préparation</h1><p>Bonjour, Opérateur démo <span class="status-dot"></span> Poste actif</p></div>
+        <button class="secondary desktop-only" type="button" data-action="billing">Voir la facturation →</button>
+      </div>
+      <div class="warehouse-layout">
+        <form id="task-form" class="panel task-panel">
+          <div class="step-title"><span>1</span><div><h2>Identifier la tâche</h2><p>Sélectionnez le client et sa commande.</p></div></div>
+          <label for="client-select">Client</label>
+          <select id="client-select" required>
+            <option value="">Sélectionner un client…</option>
+            <option>Client A</option><option>Client B</option><option>Client C</option>
+          </select>
+          <label for="order-select">Commande</label>
+          <select id="order-select" required disabled><option value="">Choisir d’abord un client…</option></select>
+          <div id="task-summary" class="task-summary hidden">
+            <span>COMMANDE SÉLECTIONNÉE</span><strong id="selected-order"></strong><small id="selected-client"></small>
+          </div>
+        </form>
+        <div class="panel timer-panel">
+          <div class="step-title"><span>2</span><div><h2>Chronométrer</h2><p id="timer-help">Le timer démo avance 10× plus vite.</p></div></div>
+          <div id="timer-state" class="timer-state">PRÊT À DÉMARRER</div>
+          <div id="timer" class="timer" role="timer" aria-live="off">00:00:00</div>
+          <button id="timer-button" class="primary timer-button" type="button" disabled><span aria-hidden="true">▶</span> Démarrer la préparation</button>
+          <button id="cancel-timer" class="text-button hidden" type="button">Annuler la tâche</button>
+        </div>
+      </div>
+      <div class="recent-block">
+        <div class="section-heading"><div><h2>Dernières saisies</h2><p>Temps enregistrés sur ce poste</p></div><span id="today-total" class="metric-pill"></span></div>
+        <div id="recent-list" class="recent-list"></div>
+      </div>
+    </section>
+
+    <section id="view-confirm" class="view hidden" aria-labelledby="confirm-title">
+      <div class="narrow-page">
+        <button class="back-button" type="button" data-action="warehouse">← Retour</button>
+        <div class="panel confirm-panel">
+          <div class="success-icon" aria-hidden="true">✓</div>
+          <div class="eyebrow">Préparation terminée</div>
+          <h1 id="confirm-title">Confirmer le temps</h1>
+          <p>Vérifiez la durée avant de l’ajouter à la synthèse.</p>
+          <div class="confirm-order"><span id="confirm-client"></span><strong id="confirm-order"></strong></div>
+          <fieldset>
+            <legend>Durée à facturer</legend>
+            <div class="duration-fields">
+              <label><input id="duration-hours" type="number" min="0" max="23" inputmode="numeric"><span>heures</span></label>
+              <strong>:</strong>
+              <label><input id="duration-minutes" type="number" min="0" max="59" inputmode="numeric"><span>minutes</span></label>
+            </div>
+            <p id="duration-error" class="field-error hidden">Indiquez une durée supérieure à zéro.</p>
+            <p class="hint">Vous pouvez corriger la durée chronométrée.</p>
+          </fieldset>
+          <label for="comment">Commentaire <span class="optional">(facultatif)</span></label>
+          <textarea id="comment" rows="3" placeholder="Ex. attente palette, contrôle complémentaire…"></textarea>
+          <div class="button-row"><button class="secondary" type="button" data-action="warehouse">Annuler</button><button id="save-entry" class="primary" type="button">✓ Confirmer la saisie</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-billing" class="view hidden" aria-labelledby="billing-title">
+      <div class="page-heading billing-heading">
+        <div><div class="eyebrow">Espace facturation</div><h1 id="billing-title">Synthèse mensuelle</h1><p>Contrôle des temps de préparation avant export.</p></div>
+        <button class="secondary desktop-only" type="button" data-action="warehouse">← Saisie magasinier</button>
+      </div>
+      <div class="filter-bar panel">
+        <label>Mois<select id="month-filter"><option value="2026-08">Août 2026</option><option value="2026-07">Juillet 2026</option></select></label>
+        <label>Client<select id="client-filter"><option value="all">Tous les clients</option><option>Client A</option><option>Client B</option><option>Client C</option></select></label>
+        <label>Statut<select id="status-filter"><option value="all">Tous les statuts</option><option value="À contrôler">À contrôler</option><option value="Validé">Validé</option></select></label>
+        <button id="export-csv" class="primary export-button" type="button">⇩ Exporter en CSV</button>
+      </div>
+      <div id="kpi-grid" class="kpi-grid"></div>
+      <div class="panel table-panel">
+        <div class="section-heading"><div><h2>Temps par client</h2><p id="result-count"></p></div><span class="fictional-rate">Tarif fictif : 42,00 € / h</span></div>
+        <div class="table-scroll"><table><thead><tr><th>Client</th><th>Préparations</th><th>Temps total</th><th>Montant estimé*</th><th>Statut</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="billing-rows"></tbody></table></div>
+        <p class="table-note">* Estimation de démonstration sur la base d’un tarif entièrement fictif.</p>
+      </div>
+    </section>
+
+    <section id="view-detail" class="view hidden" aria-labelledby="detail-title">
+      <div class="page-heading">
+        <div><button class="back-button" type="button" data-action="billing">← Synthèse mensuelle</button><div class="eyebrow">Détail client · <span id="detail-month"></span></div><h1 id="detail-title">Client A</h1><p>Liste des préparations enregistrées.</p></div>
+        <button id="detail-export" class="primary" type="button">⇩ Exporter ce client</button>
+      </div>
+      <div id="detail-kpis" class="kpi-grid detail-kpis"></div>
+      <div class="panel table-panel">
+        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Commande</th><th>Opérateur</th><th>Durée</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
+      </div>
+    </section>
+  </main>
+
+  <nav id="mobile-nav" class="mobile-nav hidden" aria-label="Navigation principale">
+    <button type="button" data-action="warehouse"><span>▦</span>Saisie</button>
+    <button type="button" data-action="billing"><span>▥</span>Facturation</button>
+  </nav>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

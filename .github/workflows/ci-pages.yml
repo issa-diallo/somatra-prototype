@@ -1,0 +1,111 @@
+name: CI et publication GitHub Pages
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validation du prototype
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Configurer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Vérifier la syntaxe JavaScript
+        run: node --check app.js
+
+      - name: Vérifier les fichiers attendus
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          required = [Path("index.html"), Path("styles.css"), Path("app.js")]
+          missing = [str(path) for path in required if not path.is_file()]
+          if missing:
+              raise SystemExit(f"Fichiers manquants : {', '.join(missing)}")
+
+          class Parser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.ids = []
+              def handle_starttag(self, tag, attrs):
+                  values = dict(attrs)
+                  if "id" in values:
+                      self.ids.append(values["id"])
+
+          parser = Parser()
+          parser.feed(Path("index.html").read_text(encoding="utf-8"))
+          duplicates = sorted({item for item in parser.ids if parser.ids.count(item) > 1})
+          if duplicates:
+              raise SystemExit(f"Identifiants HTML dupliqués : {duplicates}")
+          print(f"Structure HTML valide : {len(parser.ids)} identifiants uniques")
+          PY
+
+      - name: Tester le service HTTP
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 >/tmp/somatra-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          ready=false
+          for attempt in {1..20}; do
+            if curl --fail --silent "http://127.0.0.1:8080/" >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$ready" != "true" ]; then
+            cat /tmp/somatra-http.log
+            exit 1
+          fi
+          for path in /app.js /styles.css; do
+            curl --fail --silent --show-error "http://127.0.0.1:8080${path}" >/dev/null
+          done
+
+  deploy:
+    name: Publier le prototype
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Configurer GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Préparer le site
+        run: |
+          mkdir _site
+          cp index.html styles.css app.js .nojekyll _site/
+
+      - name: Téléverser le site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Déployer GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
