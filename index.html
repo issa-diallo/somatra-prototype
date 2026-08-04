@@ -51,7 +51,7 @@
       <nav class="warehouse-menu" aria-label="Menu des préparations">
         <button type="button" data-warehouse-tab="new" aria-current="page" aria-controls="warehouse-panel-new">Nouvelle</button>
         <button type="button" data-warehouse-tab="open" aria-controls="warehouse-panel-open">En cours <span id="warehouse-open-count" class="warehouse-menu-count" aria-label="0 préparation ouverte">0</span></button>
-        <button type="button" data-warehouse-tab="tracking" aria-controls="warehouse-panel-tracking">Suivi <span id="warehouse-tracking-count" class="warehouse-menu-count" aria-label="0 saisie affichée">0</span></button>
+        <button type="button" data-warehouse-tab="tracking" aria-controls="warehouse-panel-tracking">Suivi <span id="warehouse-tracking-count" class="warehouse-menu-count" aria-label="0 saisie au total">0</span></button>
       </nav>
 
       <div id="warehouse-panel-new" class="warehouse-tab-panel warehouse-layout" data-warehouse-panel="new" aria-labelledby="warehouse-tab-new-title" tabindex="-1">
@@ -86,6 +86,10 @@
         <div class="panel tracking-results">
           <div class="section-heading"><div><h2>Saisies enregistrées</h2><p id="tracking-result-count" aria-live="polite"></p></div></div>
           <div id="tracking-list" class="tracking-list"></div>
+          <div class="tracking-load-more-wrap">
+            <button id="tracking-load-more" class="secondary hidden" type="button">Afficher 20 de plus</button>
+            <span id="tracking-load-more-info" class="tracking-load-more-info" aria-live="polite"></span>
+          </div>
         </div>
       </section>
     </section>

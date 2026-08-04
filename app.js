@@ -13,6 +13,7 @@ const ORDER_REFERENCE_MAX_LENGTH = 120;
 const CLIENT_MAX_LENGTH = 120;
 const EDIT_DURATION_MAX_HOURS = 23;
 const ENTRY_STATUSES = ['À contrôler', 'Validé'];
+const TRACKING_BATCH_SIZE = 20;
 const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
   'Client B': ['CMD-2026-0147', 'CMD-2026-0155'],
@@ -41,6 +42,7 @@ let scanSession = 0;
 let warehouseTab = 'new';
 let activeProfile = null;
 let editingEntryId = null;
+let trackingVisibleLimit = TRACKING_BATCH_SIZE;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -487,6 +489,10 @@ function formatDate(date) {
   return new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'short', year:'numeric'}).format(new Date(`${date}T12:00:00`));
 }
 
+function formatShortDate(date) {
+  return new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'2-digit', year:'2-digit'}).format(new Date(`${date}T12:00:00`));
+}
+
 function isValidIsoDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -536,10 +542,14 @@ function trackingEntryCard(entry) {
   if (String(entry.id) === editingEntryId) {
     return `<article class="tracking-item is-editing">${trackingEntryForm(entry)}</article>`;
   }
-  return `<article class="tracking-item">
-    <div class="tracking-item-heading"><div><span>Client/commande</span><strong>${escapeHtml(entry.client)}</strong></div><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></div>
-    <dl><div><dt>Référence</dt><dd>${escapeHtml(entry.order)}</dd></div><div><dt>Date</dt><dd>${escapeHtml(formatDate(entry.date))}</dd></div><div><dt>Durée</dt><dd class="duration">${formatDuration(entry.minutes)}</dd></div></dl>
-    <div class="tracking-item-actions"><button class="secondary" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation ${escapeHtml(entry.order)}">Modifier</button></div>
+  return `<article class="tracking-item tracking-row">
+    <button class="tracking-row-button" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation, client ${escapeHtml(entry.client)}, référence ${escapeHtml(entry.order)}, statut ${escapeHtml(entry.status)}, date ${escapeHtml(formatShortDate(entry.date))}, durée ${escapeHtml(formatDuration(entry.minutes))}">
+      <span class="tracking-row-content">
+        <span class="tracking-row-main"><strong>${escapeHtml(entry.client)}</strong><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></span>
+        <span class="tracking-row-meta"><span class="tracking-row-reference">${escapeHtml(entry.order)}</span><span aria-hidden="true"> · </span><span>${escapeHtml(formatShortDate(entry.date))}</span><span aria-hidden="true"> · </span><span class="duration">${formatDuration(entry.minutes)}</span></span>
+      </span>
+      <span class="tracking-edit-indicator" aria-hidden="true">✎</span>
+    </button>
   </article>`;
 }
 
@@ -605,15 +615,21 @@ function saveEditedEntry(form) {
 function renderTracking() {
   updateTrackingFilters();
   const filtered = getTrackingEntries().slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const visible = filtered.slice(0, trackingVisibleLimit);
+  const remaining = Math.max(0, filtered.length - visible.length);
   const uniqueClients = new Set(filtered.map((entry) => entry.client)).size;
   const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
   $('#warehouse-tracking-count').textContent = filtered.length;
-  $('#warehouse-tracking-count').setAttribute('aria-label', `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`);
+  $('#warehouse-tracking-count').setAttribute('aria-label', `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} au total`);
   $('#tracking-kpis').innerHTML = [
     ['Clients/commandes uniques', uniqueClients], ['Préparations', filtered.length], ['Temps total', formatDuration(minutes)]
   ].map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#tracking-result-count').textContent = `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`;
-  $('#tracking-list').innerHTML = filtered.length ? filtered.map(trackingEntryCard).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
+  $('#tracking-result-count').textContent = `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} au total`;
+  $('#tracking-list').innerHTML = filtered.length ? visible.map(trackingEntryCard).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
+  const canLoadMore = remaining > 0 && editingEntryId === null;
+  $('#tracking-load-more').classList.toggle('hidden', !canLoadMore);
+  $('#tracking-load-more').disabled = !canLoadMore;
+  $('#tracking-load-more-info').textContent = filtered.length ? `${visible.length} affichée${visible.length > 1 ? 's' : ''} · ${remaining} restante${remaining > 1 ? 's' : ''}` : '';
 }
 
 function getFilteredEntries(clientOverride) {
@@ -750,7 +766,15 @@ $('#tracking-list').addEventListener('submit', (event) => {
 });
 $('#save-entry').addEventListener('click', saveEntry);
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
-['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderTracking));
+['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', () => {
+  trackingVisibleLimit = TRACKING_BATCH_SIZE;
+  editingEntryId = null;
+  renderTracking();
+}));
+$('#tracking-load-more').addEventListener('click', () => {
+  trackingVisibleLimit += TRACKING_BATCH_SIZE;
+  renderTracking();
+});
 $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
 window.setInterval(refreshRunningDurations, 1000);
