@@ -66,12 +66,12 @@
         </form>
         <div class="panel timer-panel">
           <div class="step-title"><span>2</span><div><h2>Lancer la préparation</h2><p>Le temps est suivi selon l’horloge réelle, même après actualisation.</p></div></div>
-          <p class="launch-help">Le démarrage met automatiquement en pause toute autre préparation en cours.</p>
+          <p class="launch-help">Chaque préparation suit son propre temps, indépendamment des autres.</p>
           <button id="timer-button" class="primary timer-button" type="button" disabled><span aria-hidden="true">▶</span> Démarrer la préparation sélectionnée</button>
         </div>
       </div>
       <section class="open-tasks-block" aria-labelledby="open-tasks-title">
-        <div class="section-heading"><div><h2 id="open-tasks-title">Préparations ouvertes</h2><p>Une seule préparation cumule du temps à la fois.</p></div><span id="open-tasks-count" class="metric-pill"></span></div>
+        <div class="section-heading"><div><h2 id="open-tasks-title">Préparations ouvertes</h2><p>Plusieurs préparations peuvent être suivies simultanément.</p></div><span id="open-tasks-count" class="metric-pill"></span></div>
         <div id="open-tasks-list" class="open-tasks-list" aria-live="polite"></div>
       </section>
       <div class="recent-block">
