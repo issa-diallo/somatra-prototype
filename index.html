@@ -48,12 +48,14 @@
       </div>
       <div class="warehouse-layout">
         <form id="task-form" class="panel task-panel">
-          <div class="step-title"><span>1</span><div><h2>Identifier la tâche</h2><p>Sélectionnez le client et sa commande.</p></div></div>
-          <label for="client-select">Client</label>
-          <select id="client-select" required>
-            <option value="">Sélectionner un client…</option>
-            <option>Client A</option><option>Client B</option><option>Client C</option>
-          </select>
+          <div class="step-title"><span>1</span><div><h2>Identifier la tâche</h2><p>Recherchez le client et sélectionnez sa commande.</p></div></div>
+          <label for="client-search">Client</label>
+          <div class="client-search">
+            <input id="client-search" type="search" autocomplete="off" placeholder="Ex. Client A" aria-describedby="client-search-help" aria-controls="client-results">
+            <p id="client-search-help" class="hint search-hint">Saisissez tout ou partie du nom.</p>
+            <div id="client-results" class="client-results" aria-live="polite"></div>
+            <button id="open-client-dialog" class="secondary add-client-button hidden" type="button">＋ Ajouter ce client</button>
+          </div>
           <label for="order-select">Commande</label>
           <select id="order-select" required disabled><option value="">Choisir d’abord un client…</option></select>
           <div id="task-summary" class="task-summary hidden">
@@ -130,6 +132,23 @@
       </div>
     </section>
   </main>
+
+  <dialog id="client-dialog" class="client-dialog" aria-labelledby="client-dialog-title" aria-describedby="client-dialog-description">
+    <form id="client-form" class="client-dialog-form" novalidate>
+      <div class="dialog-heading">
+        <div><div class="eyebrow">Nouveau client fictif</div><h2 id="client-dialog-title">Ajouter un client</h2></div>
+        <button id="close-client-dialog" class="dialog-close" type="button" aria-label="Fermer">×</button>
+      </div>
+      <p id="client-dialog-description">Créez le client et sa première commande sans quitter la saisie.</p>
+      <label for="new-client-name">Nom du client</label>
+      <input id="new-client-name" type="text" autocomplete="organization" required aria-describedby="new-client-error">
+      <p id="new-client-error" class="field-error hidden"></p>
+      <label for="new-order-reference">Première référence de commande</label>
+      <input id="new-order-reference" type="text" autocomplete="off" placeholder="Ex. CMD-2026-0160" required aria-describedby="new-order-error">
+      <p id="new-order-error" class="field-error hidden"></p>
+      <div class="button-row"><button id="cancel-client-dialog" class="secondary" type="button">Annuler</button><button class="primary" type="submit">Ajouter et sélectionner</button></div>
+    </form>
+  </dialog>
 
   <nav id="mobile-nav" class="mobile-nav hidden" aria-label="Navigation principale">
     <button type="button" data-action="warehouse"><span>▦</span>Saisie</button>

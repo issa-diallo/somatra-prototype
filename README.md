@@ -25,7 +25,7 @@ Puis ouvrir <http://localhost:8080>.
 5. Ouvrir **Facturation** : la saisie apparaît dans la synthèse d’août 2026 avec le statut « À contrôler ».
 6. Filtrer les résultats, ouvrir le détail d’un client ou télécharger l’export CSV.
 
-Les saisies sont conservées dans le `localStorage` du navigateur. Aucun backend ni appel réseau n’est utilisé. Pour retrouver les données initiales, supprimer la clé `somatra-demo-entries-v1` dans le stockage local du navigateur.
+Les saisies sont conservées dans le `localStorage` du navigateur, ainsi que les clients et commandes ajoutés pendant la démonstration. Aucun backend ni appel réseau n’est utilisé. Pour retrouver toutes les données initiales, supprimer les clés `somatra-demo-entries-v1` et `somatra-demo-clients-v1` dans le stockage local du navigateur.
 
 ## Fichiers
 
