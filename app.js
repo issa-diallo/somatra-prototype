@@ -134,7 +134,7 @@ function showView(name) {
     renderWarehouseTab();
   }
   if (name === 'billing') renderBilling();
-  window.scrollTo(0, 0);
+  $('#app').scrollTop = 0;
   if (name === 'warehouse' && warehouseTab === 'new') $('#order-reference').focus({preventScroll:true});
   else $('#app').focus({preventScroll:true});
 }
@@ -193,6 +193,7 @@ function setWarehouseTab(tab, moveFocus = false) {
   renderTracking();
   renderOpenTasks();
   renderWarehouseTab();
+  $('#app').scrollTop = 0;
   if (!moveFocus) return;
   const panel = document.querySelector(`[data-warehouse-panel="${tab}"]`);
   if (tab === 'new') $('#order-reference').focus({preventScroll:true});
