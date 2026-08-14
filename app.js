@@ -5,6 +5,11 @@ const RATE = 42;
 const STORAGE_KEY = 'somatra-demo-entries-v1';
 const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
 const OPEN_TASKS_STORAGE_KEY = 'somatra-demo-open-preparations-v1';
+const RESET_STORAGE_VALUES = new Map([
+  [STORAGE_KEY, '[]'],
+  [CLIENTS_STORAGE_KEY, '{}'],
+  [OPEN_TASKS_STORAGE_KEY, '[]']
+]);
 const AUTHENTICATED_OPERATOR = 'Magasinier démo';
 const LEGACY_OPERATOR = 'Magasinier non renseigné (ancienne tâche)';
 const UNIDENTIFIED_CLIENT = 'Client à identifier';
@@ -1228,6 +1233,13 @@ function restoreResetSnapshot(storage, snapshot) {
       compensationFailed = true;
     }
   });
+  snapshot.forEach((value, key) => {
+    try {
+      if (storage.getItem(key) !== value) compensationFailed = true;
+    } catch (error) {
+      compensationFailed = true;
+    }
+  });
   return compensationFailed;
 }
 
@@ -1236,24 +1248,62 @@ function resetDemo() {
   resetInProgress = true;
   $('#confirm-reset').disabled = true;
   showResetError('');
-  const keys = [STORAGE_KEY, CLIENTS_STORAGE_KEY, OPEN_TASKS_STORAGE_KEY];
   let storage;
   let snapshot;
+  let stateSnapshot;
   try {
     storage = window.localStorage;
-    snapshot = new Map(keys.map((key) => [key, storage.getItem(key)]));
-    keys.forEach((key) => storage.removeItem(key));
-    if (keys.some((key) => storage.getItem(key) !== null)) throw new Error('Vérification du stockage impossible');
-    window.location.reload();
-    return;
+    snapshot = new Map([...RESET_STORAGE_VALUES.keys()].map((key) => [key, storage.getItem(key)]));
+    stateSnapshot = {
+      entries,
+      orders,
+      openTasks,
+      referenceClientAssignments,
+      pendingTask,
+      detailClient,
+      editingEntryId,
+      trackingVisibleLimit
+    };
+    RESET_STORAGE_VALUES.forEach((value, key) => storage.setItem(key, value));
+    RESET_STORAGE_VALUES.forEach((value, key) => {
+      if (storage.getItem(key) !== value) throw new Error('Vérification du stockage impossible');
+    });
+
+    entries = [];
+    orders = {};
+    openTasks = [];
+    referenceClientAssignments = new Map();
+    pendingTask = null;
+    detailClient = null;
+    editingEntryId = null;
+    trackingVisibleLimit = TRACKING_BATCH_SIZE;
+    showTrackingReportError('');
+    renderTracking();
+    renderOpenTasks();
+    renderBilling();
   } catch (error) {
+    if (stateSnapshot) {
+      ({
+        entries,
+        orders,
+        openTasks,
+        referenceClientAssignments,
+        pendingTask,
+        detailClient,
+        editingEntryId,
+        trackingVisibleLimit
+      } = stateSnapshot);
+    }
     const compensationFailed = storage && snapshot ? restoreResetSnapshot(storage, snapshot) : false;
     resetInProgress = false;
     $('#confirm-reset').disabled = false;
     showResetError(compensationFailed
-      ? 'La réinitialisation a échoué et certaines données locales n’ont pas pu être restaurées. Rechargez la page, puis réessayez.'
+      ? 'La réinitialisation a échoué et certaines données locales n’ont pas pu être restaurées ou vérifiées. Rechargez la page, puis réessayez.'
       : 'La réinitialisation a échoué. Vos données locales ont été conservées ou restaurées. Réessayez après avoir rechargé la page.');
+    return;
   }
+
+  window.location.reload();
 }
 
 $$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
