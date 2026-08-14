@@ -64,6 +64,12 @@
           </div>
           <p id="order-help" class="hint search-hint">Le scan est prioritaire ; la saisie manuelle reste toujours disponible.</p>
           <p id="order-reference-error" class="field-error task-field-error hidden" role="alert"></p>
+          <label for="task-activity">Activité <span class="optional">(facultatif au démarrage)</span></label>
+          <select id="task-activity" aria-describedby="task-activity-help task-activity-error">
+            <option value="">Choisir après</option>
+          </select>
+          <p id="task-activity-help" class="hint search-hint">Vous devrez confirmer une activité à l’arrêt.</p>
+          <p id="task-activity-error" class="field-error task-field-error hidden" role="alert"></p>
           <div id="task-summary" class="task-summary hidden" aria-live="polite">
             <span>RÉFÉRENCE PRÊTE</span><strong id="selected-order"></strong>
           </div>
@@ -127,6 +133,11 @@
             <p id="duration-error" class="field-error hidden">Indiquez une durée supérieure à zéro.</p>
             <p class="hint">Vous pouvez corriger la durée calculée.</p>
           </fieldset>
+          <label for="confirm-activity">Activité</label>
+          <select id="confirm-activity" required aria-describedby="confirm-activity-error">
+            <option value="">Sélectionner une activité</option>
+          </select>
+          <p id="confirm-activity-error" class="field-error hidden" role="alert"></p>
           <label for="comment">Commentaire <span class="optional">(facultatif)</span></label>
           <textarea id="comment" rows="3" maxlength="240" placeholder="Ex. attente palette, contrôle complémentaire…" aria-describedby="comment-help comment-error"></textarea>
           <p id="comment-help" class="hint">240 caractères maximum.</p>
@@ -162,7 +173,7 @@
       </div>
       <div id="detail-kpis" class="kpi-grid detail-kpis"></div>
       <div class="panel table-panel">
-        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Commande</th><th>Opérateur</th><th>Durée</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Commande</th><th>Opérateur</th><th>Durée</th><th>Activité</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
       </div>
     </section>
   </main>

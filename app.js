@@ -14,6 +14,8 @@ const CLIENT_MAX_LENGTH = 120;
 const COMMENT_MAX_LENGTH = 240;
 const EDIT_DURATION_MAX_HOURS = 23;
 const ENTRY_STATUSES = ['À contrôler', 'Validé'];
+const ACTIVITIES = ['Préparation de commande', 'Réception de marchandise', 'Rangement', 'Inventaire', 'Retour d’événement', 'Autre'];
+const MISSING_ACTIVITY_LABEL = 'Non renseignée';
 const TRACKING_BATCH_SIZE = 20;
 const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
@@ -95,7 +97,8 @@ function loadOpenTasks() {
         status: task.status === 'running' ? 'running' : 'paused',
         createdAt: Number.isFinite(task.createdAt) ? task.createdAt : Date.now(),
         accumulatedMs: Number.isFinite(task.accumulatedMs) && task.accumulatedMs >= 0 ? task.accumulatedMs : 0,
-        lastStartedAt: Number.isFinite(task.lastStartedAt) ? task.lastStartedAt : null
+        lastStartedAt: Number.isFinite(task.lastStartedAt) ? task.lastStartedAt : null,
+        ...(Object.prototype.hasOwnProperty.call(task, 'activity') ? {activity:task.activity} : {})
       }));
   } catch (error) {
     return [];
@@ -108,6 +111,19 @@ function persistOpenTasks() {
 
 function normalizeUserInput(value) {
   return String(value).trim().replace(/\s+/g, ' ');
+}
+
+function isAllowedActivity(value) {
+  return typeof value === 'string' && ACTIVITIES.includes(value);
+}
+
+function activityDisplayLabel(record) {
+  if (!record || typeof record.activity !== 'string' || record.activity.length === 0) return MISSING_ACTIVITY_LABEL;
+  return record.activity;
+}
+
+function activityOptions(selectedActivity, emptyLabel = 'Sélectionner une activité') {
+  return `<option value="">${escapeHtml(emptyLabel)}</option>${ACTIVITIES.map((activity) => `<option value="${escapeHtml(activity)}"${selectedActivity === activity ? ' selected' : ''}>${escapeHtml(activity)}</option>`).join('')}`;
 }
 
 function referenceKey(value) {
@@ -462,11 +478,14 @@ function pauseTaskAt(task, timestamp) {
 
 function resetTaskSelection() {
   $('#order-reference').value = '';
+  $('#task-activity').value = '';
+  clearTaskFieldError('task-activity', 'task-activity-error');
   updateTaskSelection();
 }
 
 function startTimer() {
   const order = normalizeUserInput($('#order-reference').value);
+  const activity = $('#task-activity').value;
   if (!order) {
     showTaskFieldError('order-reference', 'order-reference-error', 'Indiquez une référence de commande.');
     $('#order-reference').focus();
@@ -478,6 +497,12 @@ function startTimer() {
     return;
   }
   clearTaskFieldError('order-reference', 'order-reference-error');
+  if (activity && !isAllowedActivity(activity)) {
+    showTaskFieldError('task-activity', 'task-activity-error', 'Sélectionnez une activité proposée ou choisissez après.');
+    $('#task-activity').focus();
+    return;
+  }
+  clearTaskFieldError('task-activity', 'task-activity-error');
   const now = Date.now();
   const client = clientForReference(order);
   openTasks.push({
@@ -488,7 +513,8 @@ function startTimer() {
     status: 'running',
     createdAt: now,
     accumulatedMs: 0,
-    lastStartedAt: now
+    lastStartedAt: now,
+    ...(activity ? {activity} : {})
   });
   persistOpenTasks();
   resetTaskSelection();
@@ -532,6 +558,8 @@ function finishTask(taskId) {
   $('#confirm-operator').textContent = task.operator || LEGACY_OPERATOR;
   $('#duration-hours').value = Math.floor(roundedMinutes / 60);
   $('#duration-minutes').value = roundedMinutes % 60;
+  $('#confirm-activity').innerHTML = activityOptions(isAllowedActivity(task.activity) ? task.activity : '');
+  clearTaskFieldError('confirm-activity', 'confirm-activity-error');
   $('#comment').value = '';
   clearTaskFieldError('comment', 'comment-error');
   $('#duration-error').classList.add('hidden');
@@ -551,7 +579,7 @@ function renderOpenTasks() {
   list.innerHTML = openTasks.length ? openTasks.map((task) => {
     const running = task.status === 'running';
     return `<article class="open-task${running ? ' is-running' : ''}">
-      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)} · ${escapeHtml(task.operator || LEGACY_OPERATOR)}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
+      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)} · ${escapeHtml(task.operator || LEGACY_OPERATOR)}</span><span class="open-task-activity">Activité : ${escapeHtml(activityDisplayLabel(task))}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
       <dl><div><dt>Début</dt><dd>${escapeHtml(formatStartTime(task.createdAt))}</dd></div><div><dt>Durée cumulée</dt><dd class="open-task-duration" data-task-duration="${escapeHtml(task.id)}">${formatClock(taskElapsedMs(task, now))}</dd></div></dl>
       <div class="open-task-actions">${running
         ? `<button class="secondary" type="button" data-task-action="pause" data-task-id="${escapeHtml(task.id)}" aria-label="Mettre en pause la préparation ${escapeHtml(task.order)}">Pause</button>`
@@ -574,10 +602,17 @@ function saveEntry() {
   const hours = Number.parseInt($('#duration-hours').value, 10) || 0;
   const minutesPart = Number.parseInt($('#duration-minutes').value, 10) || 0;
   const total = hours * 60 + minutesPart;
+  const activity = $('#confirm-activity').value;
   if (!pendingTask || hours < 0 || minutesPart < 0 || minutesPart > 59 || total <= 0) {
     $('#duration-error').classList.remove('hidden');
     return;
   }
+  if (!isAllowedActivity(activity)) {
+    showTaskFieldError('confirm-activity', 'confirm-activity-error', 'Sélectionnez une activité proposée.');
+    $('#confirm-activity').focus();
+    return;
+  }
+  clearTaskFieldError('confirm-activity', 'confirm-activity-error');
   const comment = $('#comment').value.trim();
   if (comment.length > COMMENT_MAX_LENGTH) {
     showTaskFieldError('comment', 'comment-error', `Le commentaire ne peut pas dépasser ${COMMENT_MAX_LENGTH} caractères.`);
@@ -588,7 +623,7 @@ function saveEntry() {
   $('#duration-error').classList.add('hidden');
   entries.push({
     id: Date.now(), date: DEMO_DATE, client: pendingTask.client, order: pendingTask.order,
-    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, comment, status: 'À contrôler'
+    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, activity, comment, status: 'À contrôler'
   });
   persistEntries();
   const taskId = pendingTask.id;
@@ -684,6 +719,7 @@ function trackingEntryForm(entry) {
       <label>Client/commande<input name="client" type="text" value="${escapeHtml(entry.client)}" maxlength="${CLIENT_MAX_LENGTH}" autocomplete="off" required></label>
       <label>Référence<input name="order" type="text" value="${escapeHtml(entry.order)}" maxlength="${ORDER_REFERENCE_MAX_LENGTH}" autocomplete="off" required></label>
       <label>Date<input name="date" type="date" value="${escapeHtml(entry.date)}" required></label>
+      <label>Activité<select name="activity" required>${activityOptions(isAllowedActivity(entry.activity) ? entry.activity : '')}</select></label>
       <fieldset><legend>Durée</legend><div class="tracking-duration-fields"><label>Heures<input name="hours" type="number" value="${escapeHtml(hours)}" min="0" max="${EDIT_DURATION_MAX_HOURS}" inputmode="numeric" required></label><label>Minutes<input name="minutes" type="number" value="${escapeHtml(minutes)}" min="0" max="59" inputmode="numeric" required></label></div></fieldset>
       <label>Statut<select name="status" required>${ENTRY_STATUSES.map((status) => `<option value="${escapeHtml(status)}"${entry.status === status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}</select></label>
     </div>
@@ -697,10 +733,11 @@ function trackingEntryCard(entry) {
     return `<article class="tracking-item is-editing">${trackingEntryForm(entry)}</article>`;
   }
   return `<article class="tracking-item tracking-row">
-    <button class="tracking-row-button" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation, client ${escapeHtml(entry.client)}, référence ${escapeHtml(entry.order)}, statut ${escapeHtml(entry.status)}, date ${escapeHtml(formatShortDate(entry.date))}, durée ${escapeHtml(formatDuration(entry.minutes))}">
+    <button class="tracking-row-button" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation, client ${escapeHtml(entry.client)}, référence ${escapeHtml(entry.order)}, activité ${escapeHtml(activityDisplayLabel(entry))}, statut ${escapeHtml(entry.status)}, date ${escapeHtml(formatShortDate(entry.date))}, durée ${escapeHtml(formatDuration(entry.minutes))}">
       <span class="tracking-row-content">
         <span class="tracking-row-main"><strong>${escapeHtml(entry.client)}</strong><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></span>
         <span class="tracking-row-meta"><span class="tracking-row-reference">${escapeHtml(entry.order)}</span><span aria-hidden="true"> · </span><span>${escapeHtml(formatShortDate(entry.date))}</span><span aria-hidden="true"> · </span><span class="duration">${formatDuration(entry.minutes)}</span></span>
+        <span class="tracking-row-activity">Activité : ${escapeHtml(activityDisplayLabel(entry))}</span>
       </span>
       <span class="tracking-edit-indicator" aria-hidden="true">✎</span>
     </button>
@@ -743,6 +780,7 @@ function saveEditedEntry(form) {
   const hoursText = form.elements.hours.value.trim();
   const minutesText = form.elements.minutes.value.trim();
   const status = form.elements.status.value;
+  const activity = form.elements.activity.value;
   const errors = [];
   if (!client) errors.push({name:'client', message:'Indiquez un client ou une commande.'});
   else if (client.length > CLIENT_MAX_LENGTH) errors.push({name:'client', message:`Le client ou la commande ne peut pas dépasser ${CLIENT_MAX_LENGTH} caractères.`});
@@ -754,6 +792,7 @@ function saveEditedEntry(form) {
   const totalMinutes = /^\d+$/.test(hoursText) && /^\d+$/.test(minutesText) ? Number(hoursText) * 60 + Number(minutesText) : 0;
   if (!errors.some(({name}) => name === 'hours' || name === 'minutes') && totalMinutes <= 0) errors.push({name:'hours', message:'Indiquez une durée supérieure à zéro.'});
   if (!ENTRY_STATUSES.includes(status)) errors.push({name:'status', message:'Sélectionnez un statut proposé.'});
+  if (!isAllowedActivity(activity)) errors.push({name:'activity', message:'Sélectionnez une activité proposée.'});
   if (errors.length) {
     showTrackingEditErrors(form, errors);
     return;
@@ -761,7 +800,7 @@ function saveEditedEntry(form) {
 
   const newReferenceKey = referenceKey(order);
   const assignedClient = seedClientForReference(order) || client;
-  Object.assign(entry, {client:assignedClient, order, date, minutes:totalMinutes, status});
+  Object.assign(entry, {client:assignedClient, order, date, minutes:totalMinutes, activity, status});
   [...entries, ...openTasks].forEach((record) => {
     if (record !== entry && referenceKey(record.order) === newReferenceKey) record.client = assignedClient;
   });
@@ -775,6 +814,11 @@ function saveEditedEntry(form) {
 }
 
 function renderTracking() {
+  const existingForm = $('#tracking-list').querySelector('[data-edit-entry-id]');
+  const draft = existingForm && existingForm.dataset.editEntryId === editingEntryId
+    ? Object.fromEntries([...new FormData(existingForm).entries()])
+    : null;
+  const focusedFieldName = existingForm && document.activeElement?.form === existingForm ? document.activeElement.name : null;
   updateTrackingFilters();
   updateTrackingFilterControls();
   const filtered = getTrackingEntries().slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -791,6 +835,14 @@ function renderTracking() {
   ].map(([desktopLabel, mobileLabel, value]) => `<div class="kpi" role="group" aria-label="${desktopLabel} : ${value}"><span class="kpi-label-desktop" aria-hidden="true">${desktopLabel}</span><span class="kpi-label-mobile" aria-hidden="true">${mobileLabel}</span><strong aria-hidden="true">${value}</strong></div>`).join('');
   $('#tracking-result-count').textContent = `${filtered.length} saisie${filtered.length > 1 ? 's' : ''} au total`;
   $('#tracking-list').innerHTML = filtered.length ? visible.map(trackingEntryCard).join('') : '<div class="tracking-empty">Aucune saisie ne correspond aux filtres sélectionnés.</div>';
+  const restoredForm = draft ? $('#tracking-list').querySelector(`[data-edit-entry-id="${CSS.escape(editingEntryId)}"]`) : null;
+  if (restoredForm) {
+    Object.entries(draft).forEach(([name, value]) => {
+      const field = restoredForm.elements[name];
+      if (field && (!(field instanceof HTMLSelectElement) || [...field.options].some((option) => option.value === value))) field.value = value;
+    });
+    if (focusedFieldName) restoredForm.elements[focusedFieldName]?.focus({preventScroll:true});
+  }
   const canLoadMore = remaining > 0 && editingEntryId === null;
   $('#tracking-load-more').classList.toggle('hidden', !canLoadMore);
   $('#tracking-load-more').disabled = !canLoadMore;
@@ -849,7 +901,7 @@ function showDetail(client) {
   $('#detail-title').textContent = client;
   $('#detail-month').textContent = monthLabel($('#month-filter').value);
   $('#detail-kpis').innerHTML = [['Préparations',filtered.length],['Temps total',formatDuration(minutes)],['Montant estimé*',formatMoney(minutes / 60 * RATE)]].map(([label,value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Aucune préparation.</td></tr>';
+  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(activityDisplayLabel(entry))}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="7">Aucune préparation.</td></tr>';
   showView('detail');
 }
 
@@ -865,8 +917,8 @@ function csvEscape(value) {
 function exportCsv(client) {
   const filtered = getFilteredEntries(client);
   const lines = [
-    ['Date','Client','Commande','Opérateur','Durée (minutes)','Durée affichée','Commentaire','Statut','Montant estimé CHF (tarif fictif)'],
-    ...filtered.map((entry) => [entry.date,entry.client,entry.order,entry.operator,entry.minutes,formatDuration(entry.minutes),entry.comment,entry.status,(entry.minutes / 60 * RATE).toFixed(2).replace('.', ',')])
+    ['Date','Client','Commande','Opérateur','Durée (minutes)','Durée affichée','Activité','Commentaire','Statut','Montant estimé CHF (tarif fictif)'],
+    ...filtered.map((entry) => [entry.date,entry.client,entry.order,entry.operator,entry.minutes,formatDuration(entry.minutes),activityDisplayLabel(entry),entry.comment,entry.status,(entry.minutes / 60 * RATE).toFixed(2).replace('.', ',')])
   ];
   const csv = '\uFEFF' + lines.map((line) => line.map(csvEscape).join(';')).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
@@ -903,6 +955,11 @@ function truncatePdfText(value, maximumLength) {
 function safePdfFreeText(value, maximumLength) {
   if (containsFinancialIndicator(value)) return 'Information retiree';
   return truncatePdfText(value, maximumLength);
+}
+
+function safePdfActivity(entry) {
+  const label = activityDisplayLabel(entry);
+  return isAllowedActivity(entry?.activity) ? truncatePdfText(label, 80) : safePdfFreeText(label, 80);
 }
 
 function wrapPdfText(value, maximumLength = 88) {
@@ -972,6 +1029,7 @@ function trackingPdfEntryLines(entry) {
   const client = safePdfFreeText(entry.client, CLIENT_MAX_LENGTH);
   const order = safePdfFreeText(entry.order, ORDER_REFERENCE_MAX_LENGTH);
   const operator = safePdfFreeText(entry.operator, OPERATOR_MAX_LENGTH);
+  const activity = safePdfActivity(entry);
   const comment = safePdfFreeText(entry.comment, COMMENT_MAX_LENGTH);
   wrapPdfText(`${formatShortDate(entry.date)} - ${client}`, 86)
     .forEach((text, index) => lines.push({text, size:10, bold:index === 0, gap:12}));
@@ -980,8 +1038,9 @@ function trackingPdfEntryLines(entry) {
   if (operator) {
     wrapPdfText(`Operateur : ${operator}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
   }
+  wrapPdfText(`Activite : ${activity}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
   if (comment) {
-    wrapPdfText(`Activite/commentaire : ${comment}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
+    wrapPdfText(`Commentaire : ${comment}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
   }
   lines.push({text:'', size:5, gap:7});
   return lines;
@@ -1125,6 +1184,7 @@ $$('[data-warehouse-tab]').forEach((button) => button.addEventListener('click', 
 $('#switch-profile').addEventListener('click', () => navigate('profile-select'));
 $('#task-form').addEventListener('submit', (event) => event.preventDefault());
 $('#order-reference').addEventListener('input', updateTaskSelection);
+$('#task-activity').addEventListener('change', () => clearTaskFieldError('task-activity', 'task-activity-error'));
 $('#scan-order').addEventListener('click', openScanner);
 $('#close-scan-dialog').addEventListener('click', closeScanner);
 $('#cancel-scan').addEventListener('click', closeScanner);
@@ -1158,6 +1218,9 @@ $('#save-entry').addEventListener('click', saveEntry);
 $('#comment').addEventListener('input', () => {
   if ($('#comment').value.length <= COMMENT_MAX_LENGTH) clearTaskFieldError('comment', 'comment-error');
 });
+$('#confirm-activity').addEventListener('change', () => {
+  if (isAllowedActivity($('#confirm-activity').value)) clearTaskFieldError('confirm-activity', 'confirm-activity-error');
+});
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
 ['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', () => {
   trackingVisibleLimit = TRACKING_BATCH_SIZE;
@@ -1184,6 +1247,7 @@ $('#pdf-dialog').addEventListener('cancel', (event) => {
 window.setInterval(refreshRunningDurations, 1000);
 
 $('#warehouse-greeting').textContent = AUTHENTICATED_OPERATOR;
+$('#task-activity').innerHTML = activityOptions('', 'Choisir après');
 updateTaskSelection();
 updateBillingClientFilter();
 showView('login');
