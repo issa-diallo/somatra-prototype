@@ -82,7 +82,11 @@ L’application utilise ou peut lire trois clés :
 - `somatra-demo-clients-v1` : clients et commandes fictifs ; cette clé peut être lue, mais n’est plus écrite dans le flux courant ;
 - `somatra-demo-open-preparations-v1` : préparations ouvertes et état des chronomètres.
 
-Effacer ces trois clés dans les outils de développement du navigateur, puis recharger la page, réalise un reset complet et restaure l’état initial fictif. Si le `localStorage` est indisponible ou bloqué, le prototype peut rester utilisable pendant la session, sans garantie de persistance.
+Depuis l’écran **Profil**, le bouton **Réinitialiser clients et données** ouvre une confirmation détaillant la suppression des clients et références ajoutés, des préparations et chronomètres ouverts, ainsi que des temps et modifications locales. L’ouverture ou la fermeture du dialogue, **Annuler**, Échap et un clic hors du dialogue ne modifient rien. Seul **Tout réinitialiser** retire les trois clés Somatra ci-dessus, vérifie leur absence, puis recharge la page afin de restaurer les données fictives initiales. Toute autre clé du navigateur reste intacte.
+
+Si une suppression ou sa vérification échoue, l’application tente de restaurer les valeurs déjà retirées, conserve le dialogue ouvert, affiche une erreur et ne recharge pas la page. Si le `localStorage` est indisponible ou bloqué, le prototype peut rester utilisable pendant la session, sans garantie de persistance. En repli, les trois clés Somatra peuvent être effacées individuellement dans les outils de développement avant de recharger la page ; ne pas vider tout le stockage du site.
+
+Cette réinitialisation concerne exclusivement des données fictives locales : aucune clé étrangère, donnée réelle ou transmission réseau n’est impliquée.
 
 La propriété facultative `activity` est additive sur les saisies et préparations ouvertes. Les anciennes données sans ce champ restent lisibles avec le libellé **Non renseignée** ; une ancienne valeur inconnue est affichée comme texte sûr, mais ne devient jamais une option valide à la prochaine sauvegarde. Le chargement n’effectue aucune réécriture destructive pour compléter ou normaliser ce champ, et les trois clés restent inchangées.
 

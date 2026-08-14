@@ -51,6 +51,8 @@ let trackingVisibleLimit = TRACKING_BATCH_SIZE;
 let trackingPdfUrl = null;
 let trackingPdfBlob = null;
 let trackingPdfFilename = '';
+let resetDialogTrigger = null;
+let resetInProgress = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -1173,6 +1175,64 @@ function toast(message) {
   toastTimer = window.setTimeout(() => $('#toast').classList.remove('show'), 3200);
 }
 
+function showResetError(message) {
+  const error = $('#reset-error');
+  error.textContent = message;
+  error.classList.toggle('hidden', !message);
+  if (message) error.focus();
+}
+
+function openResetDialog() {
+  resetDialogTrigger = document.activeElement;
+  showResetError('');
+  $('#reset-dialog').showModal();
+  $('#cancel-reset').focus();
+}
+
+function closeResetDialog() {
+  if (resetInProgress) return;
+  const dialog = $('#reset-dialog');
+  if (dialog.open) dialog.close();
+}
+
+function restoreResetSnapshot(storage, snapshot) {
+  let compensationFailed = false;
+  snapshot.forEach((value, key) => {
+    try {
+      if (value === null) storage.removeItem(key);
+      else storage.setItem(key, value);
+    } catch (error) {
+      compensationFailed = true;
+    }
+  });
+  return compensationFailed;
+}
+
+function resetDemo() {
+  if (resetInProgress) return;
+  resetInProgress = true;
+  $('#confirm-reset').disabled = true;
+  showResetError('');
+  const keys = [STORAGE_KEY, CLIENTS_STORAGE_KEY, OPEN_TASKS_STORAGE_KEY];
+  let storage;
+  let snapshot;
+  try {
+    storage = window.localStorage;
+    snapshot = new Map(keys.map((key) => [key, storage.getItem(key)]));
+    keys.forEach((key) => storage.removeItem(key));
+    if (keys.some((key) => storage.getItem(key) !== null)) throw new Error('Vérification du stockage impossible');
+    window.location.reload();
+    return;
+  } catch (error) {
+    const compensationFailed = storage && snapshot ? restoreResetSnapshot(storage, snapshot) : false;
+    resetInProgress = false;
+    $('#confirm-reset').disabled = false;
+    showResetError(compensationFailed
+      ? 'La réinitialisation a échoué et certaines données locales n’ont pas pu être restaurées. Rechargez la page, puis réessayez.'
+      : 'La réinitialisation a échoué. Vos données locales ont été conservées ou restaurées. Réessayez après avoir rechargé la page.');
+  }
+}
+
 $$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
 document.addEventListener('click', (event) => {
   const actionButton = event.target.closest('[data-action]');
@@ -1243,6 +1303,21 @@ $('#close-pdf-dialog').addEventListener('click', closeTrackingPdf);
 $('#pdf-dialog').addEventListener('cancel', (event) => {
   event.preventDefault();
   closeTrackingPdf();
+});
+$('#open-reset-dialog').addEventListener('click', openResetDialog);
+$('#close-reset-dialog').addEventListener('click', closeResetDialog);
+$('#cancel-reset').addEventListener('click', closeResetDialog);
+$('#confirm-reset').addEventListener('click', resetDemo);
+$('#reset-dialog').addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeResetDialog();
+});
+$('#reset-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) closeResetDialog();
+});
+$('#reset-dialog').addEventListener('close', () => {
+  if (resetDialogTrigger && resetDialogTrigger.isConnected) resetDialogTrigger.focus();
+  resetDialogTrigger = null;
 });
 window.setInterval(refreshRunningDurations, 1000);
 

@@ -38,6 +38,7 @@
             <span class="arrow">→</span>
           </button>
         </div>
+        <button id="open-reset-dialog" class="reset-demo-trigger" type="button">Réinitialiser clients et données</button>
         <div class="notice"><strong>Environnement de démonstration</strong><br>Aucune authentification, aucune donnée réelle, aucune transmission serveur.</div>
       </div>
     </section>
@@ -208,6 +209,30 @@
       </div>
       <p class="pdf-simulation-note">Simulation uniquement : aucun e-mail, serveur ou service externe n’est contacté.</p>
       <p id="pdf-send-status" class="pdf-send-status hidden" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
+
+  <dialog id="reset-dialog" class="reset-dialog" aria-labelledby="reset-dialog-title" aria-describedby="reset-dialog-description">
+    <div class="reset-dialog-content">
+      <div class="dialog-heading">
+        <div><div class="eyebrow">Retour à l’état initial</div><h2 id="reset-dialog-title">Réinitialiser la démonstration&nbsp;?</h2></div>
+        <button id="close-reset-dialog" class="dialog-close" type="button" aria-label="Fermer sans réinitialiser">×</button>
+      </div>
+      <div id="reset-dialog-description">
+        <p>Cette action supprime uniquement les données fictives Somatra conservées dans ce navigateur&nbsp;:</p>
+        <ul>
+          <li>les clients et références ajoutés&nbsp;;</li>
+          <li>les préparations et chronomètres ouverts&nbsp;;</li>
+          <li>les temps enregistrés et toutes les modifications locales&nbsp;;</li>
+          <li>puis restaure les données fictives initiales après rechargement.</li>
+        </ul>
+        <p><strong>Cette action est irréversible.</strong></p>
+      </div>
+      <p id="reset-error" class="reset-error hidden" role="alert" aria-live="assertive" tabindex="-1"></p>
+      <div class="reset-dialog-actions">
+        <button id="cancel-reset" class="secondary" type="button">Annuler</button>
+        <button id="confirm-reset" class="destructive" type="button">Tout réinitialiser</button>
+      </div>
     </div>
   </dialog>
 
