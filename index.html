@@ -91,6 +91,11 @@
           <label>Client/commande<select id="tracking-client-filter"></select></label>
           <label>Préparation<select id="tracking-order-filter"></select></label>
         </div>
+        <div class="tracking-report-actions panel" aria-labelledby="tracking-report-title">
+          <div><h2 id="tracking-report-title">Relevé mensuel</h2><p>Créez un PDF non financier à partir du mois et des filtres actifs.</p></div>
+          <button id="create-tracking-pdf" class="primary" type="button">Afficher le PDF</button>
+          <p id="tracking-report-error" class="tracking-report-error hidden" role="alert"></p>
+        </div>
         <div id="tracking-kpis" class="kpi-grid tracking-kpis"></div>
         <div class="panel tracking-results">
           <div class="section-heading"><div><h2>Saisies enregistrées</h2><p id="tracking-result-count" aria-live="polite"></p></div></div>
@@ -123,7 +128,9 @@
             <p class="hint">Vous pouvez corriger la durée calculée.</p>
           </fieldset>
           <label for="comment">Commentaire <span class="optional">(facultatif)</span></label>
-          <textarea id="comment" rows="3" placeholder="Ex. attente palette, contrôle complémentaire…"></textarea>
+          <textarea id="comment" rows="3" maxlength="240" placeholder="Ex. attente palette, contrôle complémentaire…" aria-describedby="comment-help comment-error"></textarea>
+          <p id="comment-help" class="hint">240 caractères maximum.</p>
+          <p id="comment-error" class="field-error hidden" role="alert"></p>
           <div class="button-row"><button class="secondary" type="button" data-action="warehouse">Annuler</button><button id="save-entry" class="primary" type="button">✓ Confirmer la saisie</button></div>
         </div>
       </div>
@@ -171,6 +178,25 @@
       <div class="camera-frame"><video id="scan-video" playsinline muted></video><span class="scan-guide" aria-hidden="true"></span></div>
       <p id="scan-feedback" class="scan-feedback" role="status" aria-live="polite">Initialisation de la caméra…</p>
       <div class="button-row"><button id="cancel-scan" class="secondary" type="button">Annuler</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="pdf-dialog" class="pdf-dialog" aria-labelledby="pdf-dialog-title" aria-describedby="pdf-dialog-description">
+    <div class="pdf-dialog-content">
+      <div class="dialog-heading">
+        <div><div class="eyebrow">Données fictives</div><h2 id="pdf-dialog-title">Relevé mensuel des préparations</h2></div>
+        <button id="close-pdf-dialog" class="dialog-close" type="button" aria-label="Fermer le relevé PDF">×</button>
+      </div>
+      <p id="pdf-dialog-description">Aperçu du relevé non financier généré localement dans votre navigateur.</p>
+      <object id="pdf-preview" class="pdf-preview" type="application/pdf" title="Aperçu du relevé mensuel PDF">
+        <p>Votre navigateur ne peut pas afficher cet aperçu PDF. Utilisez le bouton de téléchargement.</p>
+      </object>
+      <div class="pdf-dialog-actions">
+        <button id="download-tracking-pdf" class="secondary" type="button">Télécharger le PDF</button>
+        <button id="send-tracking-pdf" class="primary" type="button">Simuler l’envoi à la facturation</button>
+      </div>
+      <p class="pdf-simulation-note">Simulation uniquement : aucun e-mail, serveur ou service externe n’est contacté.</p>
+      <p id="pdf-send-status" class="pdf-send-status hidden" role="status" aria-live="polite"></p>
     </div>
   </dialog>
 

@@ -29,8 +29,8 @@ humaine.
 
 - `index.html` : vues, formulaires, dialogues et navigation.
 - `styles.css` : présentation responsive, tactile et états visuels.
-- `app.js` : état, seeds, stockage, chronomètres, scan, filtres, édition, facturation et
-  CSV.
+- `app.js` : état, seeds, stockage, chronomètres, scan, filtres, édition, PDF local,
+  facturation et CSV.
 - `assets/` : ressources statiques, dont `somatra-logo.jpg`.
 - `.github/workflows/ci-pages.yml` : validation et publication GitHub Pages.
 - `README.md`, `COMMITS.md`, `BRIEF-PROTOTYPE.md` : documentation.
@@ -54,11 +54,15 @@ humaine.
   doit modifier les autres.
 - Persister les préparations ouvertes et leur chronométrage entre chargements.
 - La fin ouvre une confirmation permettant de corriger la durée avant enregistrement.
+- Limiter le commentaire facultatif à 240 caractères sans modifier le schéma de stockage ;
+  tronquer uniquement à la composition du PDF les anciennes valeurs plus longues.
 
 ### Espace Magasinier
 
 - Conserver **Nouvelle**, **En cours**, **Suivi** et **Profil**.
-- N’y afficher aucun prix, CHF, tarif, export ni élément de facturation.
+- N’y afficher aucun prix, CHF, tarif ni élément de facturation. Le seul export autorisé
+  est le relevé mensuel PDF non financier du suivi, généré localement et dont l’envoi au
+  service facturation est explicitement simulé sans transmission.
 - Garder le suivi compact, tactile et viable avec au moins 50 lignes : 20 initiales,
   chargées ensuite par lots de 20.
 - Sur mobile, les filtres restent repliables et réinitialisables.
@@ -75,10 +79,19 @@ humaine.
 
 ### Client inconnu et compatibilité
 
-- Pour une référence libre nouvelle, employer la référence comme libellé client/commande.
-- Conserver la migration legacy de `Client à identifier` vers ce libellé pour les entrées
-  et préparations ouvertes existantes. Ne la retirer qu’avec une stratégie explicite de
-  compatibilité ou migration et une validation humaine.
+- Pour toute référence libre inconnue, scannée ou saisie manuellement, attribuer
+  automatiquement **Client A**, puis **Client B**, **Client C**, etc. Une même référence
+  normalisée conserve son attribution entre les préparations et après rechargement.
+- Les références des commandes seed connues ne consomment pas cette séquence. Préserver
+  les attributions valides et réserver leurs suffixes génériques déjà stockés. Pour une
+  référence sans attribution, les entrées, puis les préparations ouvertes, déterminent
+  l’ordre d’allocation du premier suffixe libre ; poursuivre après Z avec AA, AB, etc.
+- Pour d’anciennes attributions conflictuelles d’une même référence, la première valeur
+  valide des entrées, puis des tâches ouvertes, prévaut. Une édition explicite prévaut en
+  étant immédiatement propagée à toutes les entrées et tâches de cette référence.
+- Dériver cette attribution des enregistrements existants, sans nouvelle clé ni changement
+  de schéma. Conserver la lecture et la migration legacy de `Client à identifier` avant
+  d’appliquer l’attribution automatique.
 - Conserver exactement ces clés `localStorage` :
   - `somatra-demo-entries-v1` ;
   - `somatra-demo-clients-v1` ;
