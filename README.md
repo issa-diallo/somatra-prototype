@@ -17,23 +17,24 @@ Prototype web statique, responsive et mobile-first pour démontrer le suivi du t
 - Attribution locale des références inconnues à **Client A**, puis **Client B**, **Client C**, etc. (AA après Z). Une même référence normalisée conserve son client après rechargement ; les attributions déjà stockées et leurs suffixes sont préservés, tandis que les commandes fictives initiales ne consomment pas la séquence. En cas d’anciennes données conflictuelles pour une référence, la première attribution valide des saisies, puis des tâches ouvertes, prévaut ; une modification explicite propage le nouveau client à toute la référence.
 - Suivi de plusieurs préparations simultanées et indépendantes, avec pause, reprise et fin individuelles.
 - Persistance des préparations ouvertes et de leur chronométrage, y compris après actualisation ou fermeture de la page.
-- Confirmation et correction de la durée avant enregistrement, avec commentaire facultatif limité à **240 caractères**.
+- Choix facultatif de l’activité au démarrage parmi six valeurs proposées, ou choix reporté à l’arrêt ; une activité valide est obligatoire lors de la confirmation finale et reste modifiable dans **Suivi**.
+- Confirmation et correction de la durée avant enregistrement, avec commentaire facultatif, séparé de l’activité et limité à **240 caractères**.
 - Vue **Suivi** sans prix ni montant financier :
   - liste compacte adaptée au tactile ;
   - affichage initial de 20 lignes, puis chargement par lots de 20 ;
   - filtres par mois, client/commande et référence de préparation, repliables sur mobile ;
   - KPI calculés sur **toutes** les saisies correspondant aux filtres, même lorsque seules les 20 premières lignes sont rendues ;
-  - modification au clic d’une ligne : client/commande, référence, date, durée et statut ;
+  - affichage de l’activité et modification au clic d’une ligne : client/commande, référence, date, durée, activité et statut ;
   - statut limité aux valeurs proposées **À contrôler** et **Validé** ;
-  - relevé mensuel PDF réel basé sur le mois et les filtres actifs, affiché dans le navigateur et téléchargeable, sans donnée financière, paginé par saisie et incluant l’opérateur ainsi que le commentaire lorsqu’ils existent ;
+  - relevé mensuel PDF réel basé sur le mois et les filtres actifs, affiché dans le navigateur et téléchargeable, sans donnée financière, paginé par saisie et incluant l’opérateur, l’activité et le commentaire séparé lorsqu’il existe ;
   - simulation explicite de son envoi au service facturation, sans e-mail, API ni requête réseau.
 
 ### Profil Facturation
 
 - Synthèse mensuelle fictive en CHF : clients, préparations, temps total et montant estimé.
 - Filtres par mois, client et statut.
-- Détail des préparations d’un client.
-- Export CSV des résultats filtrés, avec des montants estimés en CHF calculés selon un tarif fictif.
+- Détail des préparations d’un client, avec leur activité.
+- Export CSV des résultats filtrés, avec l’activité et des montants estimés en CHF calculés selon un tarif fictif.
 
 Les informations financières et l’export CSV sont visibles uniquement dans l’interface **Facturation** ; aucun prix n’apparaît dans l’interface **Magasinier** ni dans son relevé PDF. Cette séparation est simulée et ne repose sur aucune authentification réelle.
 
@@ -41,11 +42,12 @@ Les informations financières et l’export CSV sont visibles uniquement dans l�
 
 1. Sur l’écran **Profil**, choisir **Magasinier** ; l’application ouvre le menu **Nouvelle**.
 2. Scanner un QR code/code-barres ou saisir une référence, puis appuyer explicitement sur le bouton de démarrage.
-3. Dans **En cours**, lancer éventuellement d’autres préparations, puis mettre en pause, reprendre ou terminer chacune indépendamment.
-4. À la fin d’une préparation, ajuster si nécessaire la durée et confirmer l’enregistrement.
-5. Dans **Suivi**, filtrer les saisies, consulter les KPI, toucher une ligne pour modifier ses informations, puis sélectionner un mois afin d’afficher, télécharger et simuler l’envoi du relevé PDF non financier.
-6. Revenir à **Profil** et choisir **Facturation**.
-7. Dans **Facturation**, filtrer la synthèse, ouvrir le détail d’un client puis exporter le CSV fictif.
+3. Choisir éventuellement une activité avant le démarrage ; **Choisir après** reporte ce choix sans enregistrer de valeur vide.
+4. Dans **En cours**, lancer éventuellement d’autres préparations, puis mettre en pause, reprendre ou terminer chacune indépendamment.
+5. À la fin d’une préparation, ajuster si nécessaire la durée, confirmer obligatoirement l’activité et enregistrer le commentaire séparément.
+6. Dans **Suivi**, filtrer les saisies, consulter les KPI, toucher une ligne pour modifier ses informations, notamment l’activité, puis sélectionner un mois afin d’afficher, télécharger et simuler l’envoi du relevé PDF non financier.
+7. Revenir à **Profil** et choisir **Facturation**.
+8. Dans **Facturation**, filtrer la synthèse, ouvrir le détail d’un client puis exporter le CSV fictif.
 
 ## Lancer localement
 
@@ -81,6 +83,8 @@ L’application utilise ou peut lire trois clés :
 - `somatra-demo-open-preparations-v1` : préparations ouvertes et état des chronomètres.
 
 Effacer ces trois clés dans les outils de développement du navigateur, puis recharger la page, réalise un reset complet et restaure l’état initial fictif. Si le `localStorage` est indisponible ou bloqué, le prototype peut rester utilisable pendant la session, sans garantie de persistance.
+
+La propriété facultative `activity` est additive sur les saisies et préparations ouvertes. Les anciennes données sans ce champ restent lisibles avec le libellé **Non renseignée** ; une ancienne valeur inconnue est affichée comme texte sûr, mais ne devient jamais une option valide à la prochaine sauvegarde. Le chargement n’effectue aucune réécriture destructive pour compléter ou normaliser ce champ, et les trois clés restent inchangées.
 
 ## CI et déploiement
 

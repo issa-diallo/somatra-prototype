@@ -96,6 +96,11 @@ humaine.
   - `somatra-demo-entries-v1` ;
   - `somatra-demo-clients-v1` ;
   - `somatra-demo-open-preparations-v1`.
+- Une préparation ouverte ou une saisie peut porter la propriété additive facultative
+  `activity`. Les anciennes données sans ce champ restent compatibles et affichent
+  **Non renseignée** ; une valeur historique inconnue reste lisible de façon sûre. Ne
+  jamais réécrire destructivement les données au chargement pour ajouter, normaliser ou
+  supprimer cette propriété.
 - La clé clients peut être lue sans être écrite dans le flux courant.
 - Ne pas renommer, supprimer, vider ou migrer ces clés ni changer leur schéma sans
   stratégie explicite de compatibilité et validation humaine.
