@@ -25,7 +25,9 @@ Prototype web statique, responsive et mobile-first pour démontrer le suivi du t
   - filtres par mois, client/commande et référence de préparation, repliables sur mobile ;
   - KPI calculés sur **toutes** les saisies correspondant aux filtres, même lorsque seules les 20 premières lignes sont rendues ;
   - affichage de l’activité et modification au clic d’une ligne : client/commande, référence, date, durée, activité et statut ;
-  - statut limité aux valeurs proposées **À contrôler** et **Validé** ;
+  - toute préparation finalisée est enregistrée avec **À valider**, puis son statut est
+    limité aux valeurs proposées **À valider** et **Validé** selon le parcours **À valider
+    → Validé** ;
   - relevé mensuel PDF réel basé sur le mois et les filtres actifs, affiché dans le navigateur et téléchargeable, sans donnée financière, paginé par saisie et incluant l’opérateur, l’activité et le commentaire séparé lorsqu’il existe ;
   - simulation explicite de son envoi au service facturation, sans e-mail, API ni requête réseau.
 
@@ -89,6 +91,15 @@ Si une suppression ou sa vérification échoue, l’application tente de restaur
 Cette réinitialisation concerne exclusivement des données fictives locales : aucune clé étrangère, donnée réelle ou transmission réseau n’est impliquée.
 
 La propriété facultative `activity` est additive sur les saisies et préparations ouvertes. Les anciennes données sans ce champ restent lisibles avec le libellé **Non renseignée** ; une ancienne valeur inconnue est affichée comme texte sûr, mais ne devient jamais une option valide à la prochaine sauvegarde. Le chargement n’effectue aucune réécriture destructive pour compléter ou normaliser ce champ, et les trois clés restent inchangées.
+
+Pour les saisies enregistrées, l’ancien statut exact **À contrôler** est interprété comme
+**À valider** en mémoire afin de rester compatible avec les données existantes. Le
+chargement seul ne réécrit pas cette valeur brute, ne crée aucune clé et ne déclenche ni
+reset ni migration destructive. Tout autre statut historique inconnu reste affiché de
+façon sûre et doit être remplacé explicitement par **À valider** ou **Validé** lors d’une
+édition. Cette normalisation ne concerne jamais les états techniques `running` et
+`paused` des préparations ouvertes. Les trois clés `localStorage` listées ci-dessus
+restent inchangées.
 
 ## CI et déploiement
 

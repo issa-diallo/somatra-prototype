@@ -68,7 +68,8 @@ humaine.
 - Sur mobile, les filtres restent repliables et réinitialisables.
 - Calculer les KPI sur tous les résultats filtrés, pas seulement les lignes rendues.
 - Une ligne ouvre l’édition du client/commande, de la référence, date, durée et statut.
-- Limiter les statuts éditables à **À contrôler** et **Validé**.
+- Toute préparation finalisée est enregistrée avec le statut **À valider**. Limiter les
+  statuts éditables à **À valider** et **Validé**, selon le parcours **À valider → Validé**.
 
 ### Espace Facturation
 
@@ -101,6 +102,12 @@ humaine.
   **Non renseignée** ; une valeur historique inconnue reste lisible de façon sûre. Ne
   jamais réécrire destructivement les données au chargement pour ajouter, normaliser ou
   supprimer cette propriété.
+- Pour les saisies enregistrées uniquement, interpréter l’ancien statut exact **À
+  contrôler** comme **À valider** en mémoire. Cette compatibilité de lecture ne déclenche
+  aucun `setItem`, reset, changement de clé ou migration destructive au chargement ; une
+  autre valeur historique reste affichée de façon sûre et exige un choix explicite parmi
+  les statuts autorisés lors de l’édition. Les états techniques `running` et `paused` des
+  préparations ouvertes restent inchangés et hors de cette normalisation.
 - La clé clients peut être lue sans être écrite dans le flux courant.
 - Ne pas renommer, supprimer, vider ou migrer ces clés ni changer leur schéma sans
   stratégie explicite de compatibilité et validation humaine.
