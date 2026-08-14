@@ -11,6 +11,7 @@ const UNIDENTIFIED_CLIENT = 'Client à identifier';
 const OPERATOR_MAX_LENGTH = 80;
 const ORDER_REFERENCE_MAX_LENGTH = 120;
 const CLIENT_MAX_LENGTH = 120;
+const COMMENT_MAX_LENGTH = 240;
 const EDIT_DURATION_MAX_HOURS = 23;
 const ENTRY_STATUSES = ['À contrôler', 'Validé'];
 const TRACKING_BATCH_SIZE = 20;
@@ -32,6 +33,8 @@ const seedEntries = [
 let entries = loadEntries();
 let orders = loadClients();
 let openTasks = loadOpenTasks();
+let referenceClientAssignments = new Map();
+reconcileReferenceClientAssignments();
 let currentView = 'login';
 let pendingTask = null;
 let detailClient = null;
@@ -43,6 +46,9 @@ let warehouseTab = 'new';
 let activeProfile = null;
 let editingEntryId = null;
 let trackingVisibleLimit = TRACKING_BATCH_SIZE;
+let trackingPdfUrl = null;
+let trackingPdfBlob = null;
+let trackingPdfFilename = '';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -102,6 +108,116 @@ function persistOpenTasks() {
 
 function normalizeUserInput(value) {
   return String(value).trim().replace(/\s+/g, ' ');
+}
+
+function referenceKey(value) {
+  return normalizeUserInput(value).toLocaleLowerCase('fr');
+}
+
+function seedClientForReference(reference) {
+  const key = referenceKey(reference);
+  for (const [client, clientOrders] of Object.entries(seedOrders)) {
+    if (clientOrders.some((order) => referenceKey(order) === key)) return client;
+  }
+  return null;
+}
+
+function automaticClientSuffix(index) {
+  let value = index + 1;
+  let suffix = '';
+  while (value > 0) {
+    value -= 1;
+    suffix = String.fromCharCode(65 + (value % 26)) + suffix;
+    value = Math.floor(value / 26);
+  }
+  return suffix;
+}
+
+function persistedClientForRecord(record) {
+  if (!record || typeof record.client !== 'string' || typeof record.order !== 'string') return null;
+  const client = normalizeUserInput(record.client);
+  const order = normalizeUserInput(record.order);
+  if (!client || client.length > CLIENT_MAX_LENGTH || client === UNIDENTIFIED_CLIENT) return null;
+  // L'ancien fallback stockait la référence elle-même comme client : il ne constitue pas une attribution.
+  return referenceKey(client) === referenceKey(order) ? null : client;
+}
+
+function automaticClientIndex(client) {
+  const match = /^Client ([A-Z]+)$/.exec(client);
+  if (!match) return null;
+  return [...match[1]].reduce((index, character) => index * 26 + character.charCodeAt(0) - 64, 0) - 1;
+}
+
+function buildReferenceClientAssignments(savedEntries, savedOpenTasks) {
+  const assignments = new Map();
+  const records = [...savedEntries, ...savedOpenTasks];
+  const reservedAutomaticIndexes = new Set();
+
+  records.forEach((record) => {
+    if (!record || typeof record.order !== 'string' || seedClientForReference(record.order)) return;
+    const client = persistedClientForRecord(record);
+    const index = client === null ? null : automaticClientIndex(client);
+    if (index !== null) reservedAutomaticIndexes.add(index);
+  });
+
+  records.forEach((record) => {
+    if (!record || typeof record.order !== 'string' || seedClientForReference(record.order)) return;
+    const key = referenceKey(record.order);
+    const client = persistedClientForRecord(record);
+    // Pour des données historiques conflictuelles, la première attribution valide des entrées,
+    // puis des tâches ouvertes, gagne. Une édition explicite est propagée avant la reconstruction.
+    if (key && client && !assignments.has(key)) assignments.set(key, client);
+  });
+
+  let nextAutomaticIndex = 0;
+  records.forEach((record) => {
+    if (!record || typeof record.order !== 'string' || seedClientForReference(record.order)) return;
+    const key = referenceKey(record.order);
+    if (!key || assignments.has(key)) return;
+    while (reservedAutomaticIndexes.has(nextAutomaticIndex)) nextAutomaticIndex += 1;
+    assignments.set(key, `Client ${automaticClientSuffix(nextAutomaticIndex)}`);
+    reservedAutomaticIndexes.add(nextAutomaticIndex);
+  });
+  return assignments;
+}
+
+function clientForReference(reference) {
+  const seedClient = seedClientForReference(reference);
+  if (seedClient) return seedClient;
+  const key = referenceKey(reference);
+  if (!referenceClientAssignments.has(key)) {
+    const reservedAutomaticIndexes = new Set(
+      [...referenceClientAssignments.values()]
+        .map(automaticClientIndex)
+        .filter((index) => index !== null)
+    );
+    let nextAutomaticIndex = 0;
+    while (reservedAutomaticIndexes.has(nextAutomaticIndex)) nextAutomaticIndex += 1;
+    referenceClientAssignments.set(key, `Client ${automaticClientSuffix(nextAutomaticIndex)}`);
+  }
+  return referenceClientAssignments.get(key);
+}
+
+function applyAutomaticClients(records) {
+  let changed = false;
+  records.forEach((record) => {
+    if (!record || typeof record.order !== 'string') return;
+    const seedClient = seedClientForReference(record.order);
+    const assignedClient = seedClient || referenceClientAssignments.get(referenceKey(record.order));
+    if (assignedClient && record.client !== assignedClient) {
+      record.client = assignedClient;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function reconcileReferenceClientAssignments() {
+  referenceClientAssignments = buildReferenceClientAssignments(entries, openTasks);
+  const entriesChanged = applyAutomaticClients(entries);
+  const openTasksChanged = applyAutomaticClients(openTasks);
+  if (entriesChanged) persistEntries();
+  if (openTasksChanged) persistOpenTasks();
 }
 
 function migrateLegacyClients(records, storageKey) {
@@ -363,9 +479,10 @@ function startTimer() {
   }
   clearTaskFieldError('order-reference', 'order-reference-error');
   const now = Date.now();
+  const client = clientForReference(order);
   openTasks.push({
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
-    client: order,
+    client,
     order,
     operator: AUTHENTICATED_OPERATOR,
     status: 'running',
@@ -416,6 +533,7 @@ function finishTask(taskId) {
   $('#duration-hours').value = Math.floor(roundedMinutes / 60);
   $('#duration-minutes').value = roundedMinutes % 60;
   $('#comment').value = '';
+  clearTaskFieldError('comment', 'comment-error');
   $('#duration-error').classList.add('hidden');
   showView('confirm');
 }
@@ -460,10 +578,17 @@ function saveEntry() {
     $('#duration-error').classList.remove('hidden');
     return;
   }
+  const comment = $('#comment').value.trim();
+  if (comment.length > COMMENT_MAX_LENGTH) {
+    showTaskFieldError('comment', 'comment-error', `Le commentaire ne peut pas dépasser ${COMMENT_MAX_LENGTH} caractères.`);
+    $('#comment').focus();
+    return;
+  }
+  clearTaskFieldError('comment', 'comment-error');
   $('#duration-error').classList.add('hidden');
   entries.push({
     id: Date.now(), date: DEMO_DATE, client: pendingTask.client, order: pendingTask.order,
-    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, comment: $('#comment').value.trim(), status: 'À contrôler'
+    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, comment, status: 'À contrôler'
   });
   persistEntries();
   const taskId = pendingTask.id;
@@ -538,6 +663,7 @@ function resetTrackingFilters(event) {
     .forEach((id) => { $(`#${id}`).value = 'all'; });
   trackingVisibleLimit = TRACKING_BATCH_SIZE;
   editingEntryId = null;
+  showTrackingReportError('');
   renderTracking();
   const toggle = $('#tracking-filter-toggle');
   if (shouldRestoreFocus && toggle.offsetParent !== null) toggle.focus();
@@ -633,8 +759,16 @@ function saveEditedEntry(form) {
     return;
   }
 
-  Object.assign(entry, {client, order, date, minutes:totalMinutes, status});
+  const newReferenceKey = referenceKey(order);
+  const assignedClient = seedClientForReference(order) || client;
+  Object.assign(entry, {client:assignedClient, order, date, minutes:totalMinutes, status});
+  [...entries, ...openTasks].forEach((record) => {
+    if (record !== entry && referenceKey(record.order) === newReferenceKey) record.client = assignedClient;
+  });
+  reconcileReferenceClientAssignments();
+  // L'entrée éditée doit être persistée même si la réconciliation n'a rien eu à modifier.
   persistEntries();
+  persistOpenTasks();
   editingEntryId = null;
   renderTracking();
   toast(`${order} mise à jour`);
@@ -748,6 +882,231 @@ function exportCsv(client) {
   toast(`${filtered.length} ligne${filtered.length > 1 ? 's' : ''} exportée${filtered.length > 1 ? 's' : ''} en CSV`);
 }
 
+function sanitizePdfText(value) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function containsFinancialIndicator(value) {
+  const text = sanitizePdfText(value);
+  return /[€$£]|\b(?:chf|francs?|prix|tarifs?|montants?|factures?|facturations?|co[uû]ts?|valeurs?)\b/iu.test(text);
+}
+
+function truncatePdfText(value, maximumLength) {
+  const characters = [...sanitizePdfText(value)];
+  if (characters.length <= maximumLength) return characters.join('');
+  return `${characters.slice(0, maximumLength - 1).join('')}…`;
+}
+
+function safePdfFreeText(value, maximumLength) {
+  if (containsFinancialIndicator(value)) return 'Information retiree';
+  return truncatePdfText(value, maximumLength);
+}
+
+function wrapPdfText(value, maximumLength = 88) {
+  const words = sanitizePdfText(value).split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach((word) => {
+    const chunks = word.match(new RegExp(`.{1,${maximumLength}}`, 'g')) || [''];
+    chunks.forEach((chunk) => {
+      if (line && line.length + chunk.length + 1 > maximumLength) {
+        lines.push(line);
+        line = '';
+      }
+      line += `${line ? ' ' : ''}${chunk}`;
+    });
+  });
+  if (line || !lines.length) lines.push(line);
+  return lines;
+}
+
+function pdfByteArray(value) {
+  const windows1252 = new Map([
+    [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84], [0x2026, 0x85],
+    [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88], [0x2030, 0x89], [0x0160, 0x8a],
+    [0x2039, 0x8b], [0x0152, 0x8c], [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92],
+    [0x201c, 0x93], [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+    [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b], [0x0153, 0x9c],
+    [0x017e, 0x9e], [0x0178, 0x9f]
+  ]);
+  return Uint8Array.from([...value].map((character) => {
+    const codePoint = character.codePointAt(0);
+    if (windows1252.has(codePoint)) return windows1252.get(codePoint);
+    return codePoint <= 0xff ? codePoint : 0x3f;
+  }));
+}
+
+function escapePdfString(value) {
+  return sanitizePdfText(value).replace(/([\\()])/g, '\\$1');
+}
+
+function trackingPdfHeaderLines(filtered, month, continuation = false) {
+  if (continuation) {
+    return wrapPdfText(`Somatra - Releve mensuel - ${monthLabel(month)} (suite)`, 86)
+      .map((text) => ({text, size:13, bold:true, gap:17}));
+  }
+  const clientFilter = $('#tracking-client-filter').value;
+  const orderFilter = $('#tracking-order-filter').value;
+  const safeClientFilter = clientFilter === 'all' ? 'Tous' : safePdfFreeText(clientFilter, CLIENT_MAX_LENGTH);
+  const safeOrderFilter = orderFilter === 'all' ? 'Toutes' : safePdfFreeText(orderFilter, ORDER_REFERENCE_MAX_LENGTH);
+  const totalMinutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
+  const uniqueClientCount = new Set(filtered.map((entry) => entry.client)).size;
+  return [
+    {text:'Somatra - Releve mensuel des preparations', size:17, bold:true, gap:24},
+    {text:`Mois : ${monthLabel(month)}`, size:12, bold:true, gap:18},
+    ...wrapPdfText(`Filtres actifs - Client/commande : ${safeClientFilter}`, 86)
+      .map((text) => ({text, size:9, gap:13})),
+    ...wrapPdfText(`Preparation : ${safeOrderFilter}`, 86)
+      .map((text) => ({text, size:9, gap:13})),
+    ...wrapPdfText(`Resume : ${filtered.length} preparation${filtered.length > 1 ? 's' : ''} - ${uniqueClientCount} client${uniqueClientCount > 1 ? 's' : ''} - ${formatDuration(totalMinutes)}`, 86)
+      .map((text) => ({text, size:11, bold:true, gap:15})),
+    {text:'Demonstration - donnees fictives - releve non financier', size:9, gap:22}
+  ];
+}
+
+function trackingPdfEntryLines(entry) {
+  const lines = [];
+  const client = safePdfFreeText(entry.client, CLIENT_MAX_LENGTH);
+  const order = safePdfFreeText(entry.order, ORDER_REFERENCE_MAX_LENGTH);
+  const operator = safePdfFreeText(entry.operator, OPERATOR_MAX_LENGTH);
+  const comment = safePdfFreeText(entry.comment, COMMENT_MAX_LENGTH);
+  wrapPdfText(`${formatShortDate(entry.date)} - ${client}`, 86)
+    .forEach((text, index) => lines.push({text, size:10, bold:index === 0, gap:12}));
+  wrapPdfText(`Reference : ${order} - Duree : ${formatDuration(entry.minutes)} - Statut : ${entry.status}`, 86)
+    .forEach((text) => lines.push({text, size:9, gap:11}));
+  if (operator) {
+    wrapPdfText(`Operateur : ${operator}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
+  }
+  if (comment) {
+    wrapPdfText(`Activite/commentaire : ${comment}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
+  }
+  lines.push({text:'', size:5, gap:7});
+  return lines;
+}
+
+function createPdfBlob(filtered, month) {
+  const pageTop = 800;
+  const pageBottom = 48;
+  const pages = [trackingPdfHeaderLines(filtered, month)];
+  let y = pageTop - pages[0].reduce((height, line) => height + line.gap, 0);
+  filtered.forEach((entry) => {
+    const entryLines = trackingPdfEntryLines(entry);
+    const entryHeight = entryLines.reduce((height, line) => height + line.gap, 0);
+    if (y - entryHeight < pageBottom) {
+      pages.push(trackingPdfHeaderLines(filtered, month, true));
+      y = pageTop - pages.at(-1).reduce((height, line) => height + line.gap, 0);
+    }
+    pages.at(-1).push(...entryLines);
+    y -= entryHeight;
+  });
+
+  const objects = new Map();
+  const pageReferences = pages.map((_, index) => 6 + index * 2);
+  objects.set(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  objects.set(2, `<< /Type /Pages /Kids [${pageReferences.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`);
+  objects.set(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  objects.set(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  pages.forEach((lines, index) => {
+    const contentId = 5 + index * 2;
+    const pageId = contentId + 1;
+    let y = 800;
+    const commands = lines.map((line) => {
+      const command = `BT /${line.bold ? 'F2' : 'F1'} ${line.size} Tf 48 ${y} Td (${escapePdfString(line.text)}) Tj ET`;
+      y -= line.gap;
+      return command;
+    }).join('\n');
+    objects.set(contentId, `<< /Length ${pdfByteArray(commands).length} >>\nstream\n${commands}\nendstream`);
+    objects.set(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);
+  });
+
+  const chunks = [pdfByteArray('%PDF-1.4\n%âãÏÓ\n')];
+  const offsets = [0];
+  let byteLength = chunks[0].length;
+  const objectCount = 4 + pages.length * 2;
+  for (let id = 1; id <= objectCount; id += 1) {
+    offsets[id] = byteLength;
+    const chunk = pdfByteArray(`${id} 0 obj\n${objects.get(id)}\nendobj\n`);
+    chunks.push(chunk);
+    byteLength += chunk.length;
+  }
+  const xrefOffset = byteLength;
+  const xref = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  chunks.push(pdfByteArray(xref));
+  return new Blob(chunks, {type:'application/pdf'});
+}
+
+function clearTrackingPdf() {
+  if (trackingPdfUrl) URL.revokeObjectURL(trackingPdfUrl);
+  trackingPdfUrl = null;
+  trackingPdfBlob = null;
+  trackingPdfFilename = '';
+  $('#pdf-preview').removeAttribute('data');
+}
+
+function closeTrackingPdf() {
+  const dialog = $('#pdf-dialog');
+  if (dialog.open) dialog.close();
+  clearTrackingPdf();
+}
+
+function showTrackingReportError(message) {
+  $('#tracking-report-error').textContent = message;
+  $('#tracking-report-error').classList.toggle('hidden', !message);
+}
+
+function createTrackingPdf() {
+  showTrackingReportError('');
+  const month = $('#tracking-month-filter').value;
+  if (month === 'all') {
+    showTrackingReportError('Sélectionnez un mois pour créer le relevé mensuel.');
+    $('#tracking-month-filter').focus();
+    return;
+  }
+  const filtered = getTrackingEntries().slice().sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  if (!filtered.length) {
+    showTrackingReportError('Aucune saisie ne correspond aux filtres actifs. Le PDF n’a pas été créé.');
+    return;
+  }
+  try {
+    clearTrackingPdf();
+    trackingPdfBlob = createPdfBlob(filtered, month);
+    trackingPdfUrl = URL.createObjectURL(trackingPdfBlob);
+    trackingPdfFilename = `somatra-releve-${month}.pdf`;
+    $('#pdf-preview').data = trackingPdfUrl;
+    $('#pdf-send-status').textContent = '';
+    $('#pdf-send-status').classList.add('hidden');
+    $('#send-tracking-pdf').disabled = false;
+    $('#pdf-dialog').showModal();
+  } catch (error) {
+    clearTrackingPdf();
+    showTrackingReportError('Le PDF n’a pas pu être créé dans ce navigateur. Réessayez après avoir rechargé la page.');
+  }
+}
+
+function downloadTrackingPdf() {
+  if (!trackingPdfBlob || !trackingPdfUrl) return;
+  const anchor = document.createElement('a');
+  anchor.href = trackingPdfUrl;
+  anchor.download = trackingPdfFilename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  toast('Téléchargement du relevé PDF lancé');
+}
+
+function simulateTrackingPdfSend() {
+  if (!trackingPdfBlob) return;
+  const status = $('#pdf-send-status');
+  status.textContent = 'Envoi simulé confirmé : le relevé n’a été transmis à personne et aucune requête réseau n’a été effectuée.';
+  status.classList.remove('hidden');
+  status.scrollIntoView({ block: 'nearest' });
+  $('#send-tracking-pdf').disabled = true;
+  toast('Simulation d’envoi confirmée — aucune transmission réelle');
+}
+
 function toast(message) {
   window.clearTimeout(toastTimer);
   $('#toast').textContent = message;
@@ -796,10 +1155,14 @@ $('#tracking-list').addEventListener('submit', (event) => {
   saveEditedEntry(form);
 });
 $('#save-entry').addEventListener('click', saveEntry);
+$('#comment').addEventListener('input', () => {
+  if ($('#comment').value.length <= COMMENT_MAX_LENGTH) clearTaskFieldError('comment', 'comment-error');
+});
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
 ['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', () => {
   trackingVisibleLimit = TRACKING_BATCH_SIZE;
   editingEntryId = null;
+  showTrackingReportError('');
   renderTracking();
 }));
 $('#tracking-filter-toggle').addEventListener('click', toggleTrackingFilters);
@@ -810,6 +1173,14 @@ $('#tracking-load-more').addEventListener('click', () => {
 });
 $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
+$('#create-tracking-pdf').addEventListener('click', createTrackingPdf);
+$('#download-tracking-pdf').addEventListener('click', downloadTrackingPdf);
+$('#send-tracking-pdf').addEventListener('click', simulateTrackingPdfSend);
+$('#close-pdf-dialog').addEventListener('click', closeTrackingPdf);
+$('#pdf-dialog').addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeTrackingPdf();
+});
 window.setInterval(refreshRunningDurations, 1000);
 
 $('#warehouse-greeting').textContent = AUTHENTICATED_OPERATOR;
