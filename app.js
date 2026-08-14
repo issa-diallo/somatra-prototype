@@ -13,7 +13,10 @@ const ORDER_REFERENCE_MAX_LENGTH = 120;
 const CLIENT_MAX_LENGTH = 120;
 const COMMENT_MAX_LENGTH = 240;
 const EDIT_DURATION_MAX_HOURS = 23;
-const ENTRY_STATUSES = ['À contrôler', 'Validé'];
+const ENTRY_STATUS_TO_VALIDATE = 'À valider';
+const ENTRY_STATUS_VALIDATED = 'Validé';
+const LEGACY_ENTRY_STATUS_TO_REVIEW = 'À contrôler';
+const ENTRY_STATUSES = [ENTRY_STATUS_TO_VALIDATE, ENTRY_STATUS_VALIDATED];
 const ACTIVITIES = ['Préparation de commande', 'Réception de marchandise', 'Rangement', 'Inventaire', 'Retour d’événement', 'Autre'];
 const MISSING_ACTIVITY_LABEL = 'Non renseignée';
 const TRACKING_BATCH_SIZE = 20;
@@ -23,13 +26,13 @@ const seedOrders = {
   'Client C': ['CMD-2026-0149', 'CMD-2026-0158']
 };
 const seedEntries = [
-  {id:1,date:'2026-08-01',client:'Client A',order:'CMD-2026-0142',minutes:82,operator:'Opérateur 01',comment:'Préparation standard',status:'Validé'},
-  {id:2,date:'2026-08-02',client:'Client B',order:'CMD-2026-0147',minutes:48,operator:'Opérateur 02',comment:'Contrôle palette',status:'Validé'},
-  {id:3,date:'2026-08-03',client:'Client A',order:'CMD-2026-0151',minutes:67,operator:'Opérateur 01',comment:'',status:'À contrôler'},
-  {id:4,date:'2026-08-03',client:'Client C',order:'CMD-2026-0149',minutes:115,operator:'Opérateur 03',comment:'Commande multi-zones',status:'Validé'},
-  {id:5,date:'2026-08-04',client:'Client B',order:'CMD-2026-0155',minutes:36,operator:'Opérateur 02',comment:'',status:'À contrôler'},
-  {id:6,date:'2026-07-12',client:'Client A',order:'CMD-2026-0142',minutes:74,operator:'Opérateur 01',comment:'Archive juillet',status:'Validé'},
-  {id:7,date:'2026-07-19',client:'Client C',order:'CMD-2026-0149',minutes:93,operator:'Opérateur 03',comment:'Archive juillet',status:'Validé'}
+  {id:1,date:'2026-08-01',client:'Client A',order:'CMD-2026-0142',minutes:82,operator:'Opérateur 01',comment:'Préparation standard',status:ENTRY_STATUS_VALIDATED},
+  {id:2,date:'2026-08-02',client:'Client B',order:'CMD-2026-0147',minutes:48,operator:'Opérateur 02',comment:'Contrôle palette',status:ENTRY_STATUS_VALIDATED},
+  {id:3,date:'2026-08-03',client:'Client A',order:'CMD-2026-0151',minutes:67,operator:'Opérateur 01',comment:'',status:ENTRY_STATUS_TO_VALIDATE},
+  {id:4,date:'2026-08-03',client:'Client C',order:'CMD-2026-0149',minutes:115,operator:'Opérateur 03',comment:'Commande multi-zones',status:ENTRY_STATUS_VALIDATED},
+  {id:5,date:'2026-08-04',client:'Client B',order:'CMD-2026-0155',minutes:36,operator:'Opérateur 02',comment:'',status:ENTRY_STATUS_TO_VALIDATE},
+  {id:6,date:'2026-07-12',client:'Client A',order:'CMD-2026-0142',minutes:74,operator:'Opérateur 01',comment:'Archive juillet',status:ENTRY_STATUS_VALIDATED},
+  {id:7,date:'2026-07-19',client:'Client C',order:'CMD-2026-0149',minutes:93,operator:'Opérateur 03',comment:'Archive juillet',status:ENTRY_STATUS_VALIDATED}
 ];
 
 let entries = loadEntries();
@@ -63,7 +66,7 @@ function loadEntries() {
     if (!saved) return seedEntries.map((entry) => ({...entry}));
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed)) return seedEntries.map((entry) => ({...entry}));
-    return migrateLegacyClients(parsed, STORAGE_KEY);
+    return normalizeEntryStatuses(migrateLegacyClients(parsed, STORAGE_KEY));
   } catch (error) {
     return seedEntries.map((entry) => ({...entry}));
   }
@@ -71,6 +74,12 @@ function loadEntries() {
 
 function persistEntries() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); } catch (error) { /* Démo utilisable sans stockage persistant. */ }
+}
+
+function normalizeEntryStatuses(savedEntries) {
+  return savedEntries.map((entry) => entry && entry.status === LEGACY_ENTRY_STATUS_TO_REVIEW
+    ? {...entry, status:ENTRY_STATUS_TO_VALIDATE}
+    : entry);
 }
 
 function loadClients() {
@@ -625,7 +634,7 @@ function saveEntry() {
   $('#duration-error').classList.add('hidden');
   entries.push({
     id: Date.now(), date: DEMO_DATE, client: pendingTask.client, order: pendingTask.order,
-    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, activity, comment, status: 'À contrôler'
+    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, activity, comment, status: ENTRY_STATUS_TO_VALIDATE
   });
   persistEntries();
   const taskId = pendingTask.id;
@@ -716,6 +725,9 @@ function getTrackingEntries() {
 function trackingEntryForm(entry) {
   const hours = Math.floor(entry.minutes / 60);
   const minutes = entry.minutes % 60;
+  const invalidStatusOption = ENTRY_STATUSES.includes(entry.status)
+    ? ''
+    : `<option value="" selected>Statut « ${escapeHtml(entry.status)} » non proposé — choisissez</option>`;
   return `<form class="tracking-edit-form" data-edit-entry-id="${escapeHtml(entry.id)}" novalidate>
     <div class="tracking-edit-grid">
       <label>Client/commande<input name="client" type="text" value="${escapeHtml(entry.client)}" maxlength="${CLIENT_MAX_LENGTH}" autocomplete="off" required></label>
@@ -723,7 +735,7 @@ function trackingEntryForm(entry) {
       <label>Date<input name="date" type="date" value="${escapeHtml(entry.date)}" required></label>
       <label>Activité<select name="activity" required>${activityOptions(isAllowedActivity(entry.activity) ? entry.activity : '')}</select></label>
       <fieldset><legend>Durée</legend><div class="tracking-duration-fields"><label>Heures<input name="hours" type="number" value="${escapeHtml(hours)}" min="0" max="${EDIT_DURATION_MAX_HOURS}" inputmode="numeric" required></label><label>Minutes<input name="minutes" type="number" value="${escapeHtml(minutes)}" min="0" max="59" inputmode="numeric" required></label></div></fieldset>
-      <label>Statut<select name="status" required>${ENTRY_STATUSES.map((status) => `<option value="${escapeHtml(status)}"${entry.status === status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}</select></label>
+      <label>Statut<select name="status" required>${invalidStatusOption}${ENTRY_STATUSES.map((status) => `<option value="${escapeHtml(status)}"${entry.status === status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}</select></label>
     </div>
     <div class="tracking-edit-error hidden" role="alert" aria-live="assertive"></div>
     <div class="tracking-edit-actions"><button class="secondary" type="button" data-entry-action="cancel">Annuler</button><button class="primary" type="submit">Enregistrer</button></div>
@@ -737,7 +749,7 @@ function trackingEntryCard(entry) {
   return `<article class="tracking-item tracking-row">
     <button class="tracking-row-button" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation, client ${escapeHtml(entry.client)}, référence ${escapeHtml(entry.order)}, activité ${escapeHtml(activityDisplayLabel(entry))}, statut ${escapeHtml(entry.status)}, date ${escapeHtml(formatShortDate(entry.date))}, durée ${escapeHtml(formatDuration(entry.minutes))}">
       <span class="tracking-row-content">
-        <span class="tracking-row-main"><strong>${escapeHtml(entry.client)}</strong><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></span>
+        <span class="tracking-row-main"><strong>${escapeHtml(entry.client)}</strong><span class="status ${entry.status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></span>
         <span class="tracking-row-meta"><span class="tracking-row-reference">${escapeHtml(entry.order)}</span><span aria-hidden="true"> · </span><span>${escapeHtml(formatShortDate(entry.date))}</span><span aria-hidden="true"> · </span><span class="duration">${formatDuration(entry.minutes)}</span></span>
         <span class="tracking-row-activity">Activité : ${escapeHtml(activityDisplayLabel(entry))}</span>
       </span>
@@ -860,12 +872,19 @@ function getFilteredEntries(clientOverride) {
 
 function groupByClient(filtered) {
   return filtered.reduce((groups, entry) => {
-    if (!groups[entry.client]) groups[entry.client] = {client:entry.client, count:0, minutes:0, review:false};
+    if (!groups[entry.client]) groups[entry.client] = {client:entry.client, count:0, minutes:0, hasToValidate:false, allValidated:true};
     groups[entry.client].count += 1;
     groups[entry.client].minutes += entry.minutes;
-    groups[entry.client].review ||= entry.status === 'À contrôler';
+    groups[entry.client].hasToValidate ||= entry.status === ENTRY_STATUS_TO_VALIDATE;
+    groups[entry.client].allValidated &&= entry.status === ENTRY_STATUS_VALIDATED;
     return groups;
   }, {});
+}
+
+function billingGroupStatus(group) {
+  if (group.hasToValidate) return ENTRY_STATUS_TO_VALIDATE;
+  if (group.allValidated) return ENTRY_STATUS_VALIDATED;
+  return 'Statut à corriger';
 }
 
 function updateBillingClientFilter() {
@@ -881,12 +900,16 @@ function renderBilling() {
   const filtered = getFilteredEntries();
   const groups = Object.values(groupByClient(filtered)).sort((a,b) => a.client.localeCompare(b.client));
   const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
-  const reviewCount = filtered.filter((entry) => entry.status === 'À contrôler').length;
+  const reviewCount = filtered.filter((entry) => entry.status === ENTRY_STATUS_TO_VALIDATE).length;
   $('#kpi-grid').innerHTML = [
     ['Clients', groups.length, ''], ['Préparations', filtered.length, ''], ['Temps total', formatDuration(minutes), 'orange'], ['Montant estimé*', formatMoney(minutes / 60 * RATE), 'green']
   ].map(([label,value,color]) => `<div class="kpi ${color}"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#result-count').textContent = `${groups.length} client${groups.length > 1 ? 's' : ''} · ${reviewCount} saisie${reviewCount > 1 ? 's' : ''} à contrôler`;
-  $('#billing-rows').innerHTML = groups.length ? groups.map((group) => `<tr><td><strong>${escapeHtml(group.client)}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(group.minutes / 60 * RATE)}</td><td><span class="status ${group.review ? 'review' : 'valid'}">${group.review ? 'À contrôler' : 'Validé'}</span></td><td><button class="detail-button" type="button" data-client="${escapeHtml(group.client)}">Voir le détail →</button></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Aucune saisie ne correspond aux filtres.</td></tr>';
+  $('#result-count').textContent = `${groups.length} client${groups.length > 1 ? 's' : ''} · ${reviewCount} saisie${reviewCount > 1 ? 's' : ''} à valider`;
+  $('#billing-rows').innerHTML = groups.length ? groups.map((group) => {
+    const status = billingGroupStatus(group);
+    const statusClass = status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review';
+    return `<tr><td><strong>${escapeHtml(group.client)}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(group.minutes / 60 * RATE)}</td><td><span class="status ${statusClass}">${escapeHtml(status)}</span></td><td><button class="detail-button" type="button" data-client="${escapeHtml(group.client)}">Voir le détail →</button></td></tr>`;
+  }).join('') : '<tr><td class="empty" colspan="6">Aucune saisie ne correspond aux filtres.</td></tr>';
   $$('.detail-button').forEach((button) => button.addEventListener('click', () => showDetail(button.dataset.client)));
 }
 
@@ -903,7 +926,7 @@ function showDetail(client) {
   $('#detail-title').textContent = client;
   $('#detail-month').textContent = monthLabel($('#month-filter').value);
   $('#detail-kpis').innerHTML = [['Préparations',filtered.length],['Temps total',formatDuration(minutes)],['Montant estimé*',formatMoney(minutes / 60 * RATE)]].map(([label,value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(activityDisplayLabel(entry))}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === 'Validé' ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="7">Aucune préparation.</td></tr>';
+  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(activityDisplayLabel(entry))}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="7">Aucune préparation.</td></tr>';
   showView('detail');
 }
 
