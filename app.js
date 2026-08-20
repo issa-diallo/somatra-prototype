@@ -25,20 +25,58 @@ const ENTRY_STATUSES = [ENTRY_STATUS_TO_VALIDATE, ENTRY_STATUS_VALIDATED];
 const ACTIVITIES = ['Préparation de commande', 'Réception de marchandise', 'Rangement', 'Inventaire', 'Retour d’événement', 'Autre'];
 const MISSING_ACTIVITY_LABEL = 'Non renseignée';
 const TRACKING_BATCH_SIZE = 20;
+const INVOICE_FIELD_LIMITS = {name:120, street:160, postalCode:20, city:100, country:80};
 const seedOrders = {
-  'Client A': ['CMD-2026-0142', 'CMD-2026-0151'],
-  'Client B': ['CMD-2026-0147', 'CMD-2026-0155'],
-  'Client C': ['CMD-2026-0149', 'CMD-2026-0158']
+  'Client A': ['CMD-2026-0142', 'CMD-2026-0151', 'CMD-A-0003', 'CMD-A-0004'],
+  'Client B': ['CMD-2026-0147', 'CMD-2026-0155', 'CMD-B-0003', 'CMD-B-0004'],
+  'Client C': ['CMD-2026-0149', 'CMD-2026-0158', 'CMD-C-0003', 'CMD-C-0004'],
+  'Client D': ['CMD-D-0001', 'CMD-D-0002', 'CMD-D-0003', 'CMD-D-0004'],
+  'Client E': ['CMD-E-0001', 'CMD-E-0002', 'CMD-E-0003', 'CMD-E-0004'],
+  'Client F': ['CMD-F-0001', 'CMD-F-0002', 'CMD-F-0003', 'CMD-F-0004']
 };
-const seedEntries = [
-  {id:1,date:'2026-08-01',client:'Client A',order:'CMD-2026-0142',minutes:82,operator:'Opérateur 01',comment:'Préparation standard',status:ENTRY_STATUS_VALIDATED},
-  {id:2,date:'2026-08-02',client:'Client B',order:'CMD-2026-0147',minutes:48,operator:'Opérateur 02',comment:'Contrôle palette',status:ENTRY_STATUS_VALIDATED},
-  {id:3,date:'2026-08-03',client:'Client A',order:'CMD-2026-0151',minutes:67,operator:'Opérateur 01',comment:'',status:ENTRY_STATUS_TO_VALIDATE},
-  {id:4,date:'2026-08-03',client:'Client C',order:'CMD-2026-0149',minutes:115,operator:'Opérateur 03',comment:'Commande multi-zones',status:ENTRY_STATUS_VALIDATED},
-  {id:5,date:'2026-08-04',client:'Client B',order:'CMD-2026-0155',minutes:36,operator:'Opérateur 02',comment:'',status:ENTRY_STATUS_TO_VALIDATE},
-  {id:6,date:'2026-07-12',client:'Client A',order:'CMD-2026-0142',minutes:74,operator:'Opérateur 01',comment:'Archive juillet',status:ENTRY_STATUS_VALIDATED},
-  {id:7,date:'2026-07-19',client:'Client C',order:'CMD-2026-0149',minutes:93,operator:'Opérateur 03',comment:'Archive juillet',status:ENTRY_STATUS_VALIDATED}
+const seedBillingProfiles = {
+  'Client A': {name:'Client A SA (fictif)', street:'Rue de la Démonstration 1', postalCode:'1000', city:'Ville exemple', country:'Suisse'},
+  'Client B': {name:'Client B SA (fictif)', street:'Avenue du Prototype 2', postalCode:'2000', city:'Ville exemple', country:'Suisse'},
+  'Client C': {name:'Client C SA (fictif)', street:'Chemin des Données 3', postalCode:'3000', city:'Ville exemple', country:'Suisse'},
+  'Client D': {name:'Client D SA (fictif)', street:'Route des Palettes 4', postalCode:'4000', city:'Ville exemple', country:'Suisse'},
+  'Client E': {name:'Client E SA (fictif)', street:'Quai des Expéditions 5', postalCode:'5000', city:'Ville exemple', country:'Suisse'},
+  'Client F': {name:'Client F SA (fictif)', street:'Allée des Entrepôts 6', postalCode:'6000', city:'Ville exemple', country:'Suisse'}
+};
+const SEED_PREPARATIONS_PER_CLIENT = 40;
+const seedMonthTargets = [
+  {month:'2026-08', totalMinutes:85714, clientCount:6, preparationsPerClient:SEED_PREPARATIONS_PER_CLIENT},
+  {month:'2026-07', totalMinutes:84286, clientCount:6, preparationsPerClient:38},
+  {month:'2025-08', totalMinutes:60000, clientCount:5, preparationsPerClient:25}
 ];
+
+function createSeedEntries() {
+  const allClients = Object.keys(seedOrders);
+  const comments = ['', '', '', 'Contrôle de démonstration', '', 'Flux standard fictif'];
+  return seedMonthTargets.flatMap(({month, totalMinutes, clientCount, preparationsPerClient}, monthIndex) => {
+    const clients = allClients.slice(0, clientCount);
+    const entriesPerMonth = clients.length * preparationsPerClient;
+    const baseMinutes = Math.floor(totalMinutes / entriesPerMonth);
+    const extraMinutes = totalMinutes % entriesPerMonth;
+    return clients.flatMap((client, clientIndex) => Array.from({length:preparationsPerClient}, (_, preparationIndex) => {
+      const monthEntryIndex = clientIndex * preparationsPerClient + preparationIndex;
+      const day = (preparationIndex * 3 + clientIndex * 5 + monthIndex) % 28 + 1;
+      const clientOrders = seedOrders[client];
+      return {
+        id: monthIndex * 10000 + monthEntryIndex + 1,
+        date: `${month}-${String(day).padStart(2, '0')}`,
+        client,
+        order: clientOrders[(preparationIndex + monthIndex) % clientOrders.length],
+        minutes: baseMinutes + (monthEntryIndex < extraMinutes ? 1 : 0),
+        operator: `Opérateur ${String((clientIndex + preparationIndex) % clients.length + 1).padStart(2, '0')}`,
+        activity: ACTIVITIES[(clientIndex + preparationIndex + monthIndex) % ACTIVITIES.length],
+        comment: comments[(preparationIndex + clientIndex * 2) % comments.length],
+        status: ENTRY_STATUS_VALIDATED
+      };
+    }));
+  });
+}
+
+const seedEntries = createSeedEntries();
 
 let entries = loadEntries();
 let orders = loadClients();
@@ -61,6 +99,12 @@ let trackingPdfBlob = null;
 let trackingPdfFilename = '';
 let resetDialogTrigger = null;
 let resetInProgress = false;
+let comparisonOpen = false;
+let invoiceDialogTrigger = null;
+let invoicePdfUrl = null;
+let invoicePdfBlob = null;
+let invoicePdfFilename = '';
+let pendingInvoiceEntries = [];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -662,6 +706,14 @@ function formatMoney(value) {
   return value.toLocaleString('fr-CH', {style:'currency', currency:'CHF'});
 }
 
+function estimatedAmountForMinutes(minutes) {
+  return minutes / 60 * RATE;
+}
+
+function estimatedAmountForEntry(entry) {
+  return estimatedAmountForMinutes(entry.minutes);
+}
+
 function formatDate(date) {
   return new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'short', year:'numeric'}).format(new Date(`${date}T12:00:00`));
 }
@@ -872,7 +924,92 @@ function getFilteredEntries(clientOverride) {
   const month = $('#month-filter').value;
   const client = clientOverride || $('#client-filter').value;
   const status = $('#status-filter').value;
+  return getBillingEntriesForPeriod(month, client, status);
+}
+
+function getBillingEntriesForPeriod(month, client = 'all', status = 'all') {
   return entries.filter((entry) => entry.date.startsWith(month) && (client === 'all' || entry.client === client) && (status === 'all' || entry.status === status));
+}
+
+function shiftMonth(month, offset) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, monthNumber - 1 + offset, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function comparisonMonth() {
+  const selectedMonth = $('#month-filter').value;
+  return $('#comparison-period').value === 'previous-year' ? shiftMonth(selectedMonth, -12) : shiftMonth(selectedMonth, -1);
+}
+
+function comparisonDelta(current, previous) {
+  if (previous === 0) return {label:current === 0 ? 'Stable' : 'Nouvelle activité', className:current === 0 ? '' : 'positive'};
+  const percentage = Math.round((current - previous) / previous * 100);
+  return {label:`${percentage > 0 ? '+' : ''}${percentage} %`, className:percentage > 0 ? 'positive' : percentage < 0 ? 'negative' : ''};
+}
+
+function comparisonMetricCard(label, current, previous, currentDisplay, previousDisplay, currentMonth, previousMonth) {
+  const maximum = Math.max(current, previous, 1);
+  const currentWidth = current / maximum * 100;
+  const previousWidth = previous / maximum * 100;
+  const delta = comparisonDelta(current, previous);
+  const ariaLabel = `${label}. ${monthLabel(currentMonth)} : ${currentDisplay}. ${monthLabel(previousMonth)} : ${previousDisplay}. Évolution : ${delta.label}.`;
+  return `<article class="comparison-metric" role="group" aria-label="${escapeHtml(ariaLabel)}">
+    <div class="comparison-metric-heading"><strong>${escapeHtml(label)}</strong><span class="comparison-delta ${delta.className}">${escapeHtml(delta.label)}</span></div>
+    <div class="comparison-bars" aria-hidden="true">
+      <div class="comparison-bar-row"><span class="comparison-bar-label">${escapeHtml(monthLabel(currentMonth))}</span><span class="comparison-bar-track"><span class="comparison-bar${current === 0 ? ' is-zero' : ''}" style="width:${currentWidth.toFixed(2)}%"></span></span><strong>${escapeHtml(currentDisplay)}</strong></div>
+      <div class="comparison-bar-row"><span class="comparison-bar-label">${escapeHtml(monthLabel(previousMonth))}</span><span class="comparison-bar-track"><span class="comparison-bar previous${previous === 0 ? ' is-zero' : ''}" style="width:${previousWidth.toFixed(2)}%"></span></span><strong>${escapeHtml(previousDisplay)}</strong></div>
+    </div>
+  </article>`;
+}
+
+function compactMoney(value) {
+  return `${new Intl.NumberFormat('fr-CH', {notation:'compact', maximumFractionDigits:1}).format(value)} CHF`;
+}
+
+function comparisonRevenueChart(currentAmount, previousAmount, currentMonth, previousMonth) {
+  const maximum = Math.max(currentAmount, previousAmount, 1);
+  const currentHeight = currentAmount ? Math.max(4, currentAmount / maximum * 100) : 0;
+  const previousHeight = previousAmount ? Math.max(4, previousAmount / maximum * 100) : 0;
+  const delta = comparisonDelta(currentAmount, previousAmount);
+  const difference = currentAmount - previousAmount;
+  const differenceLabel = `${difference >= 0 ? '+' : '−'}${formatMoney(Math.abs(difference))}`;
+  const ariaLabel = `Chiffre d’affaires estimé. ${monthLabel(previousMonth)} : ${formatMoney(previousAmount)}. ${monthLabel(currentMonth)} : ${formatMoney(currentAmount)}. Écart : ${differenceLabel}, soit ${delta.label}.`;
+  return `<div class="revenue-total-plot" role="img" aria-label="${escapeHtml(ariaLabel)}">
+    <div class="revenue-total-bars" aria-hidden="true">
+      <div class="revenue-total-column previous"><strong>${escapeHtml(compactMoney(previousAmount))}</strong><span style="height:${previousHeight.toFixed(2)}%"></span><b>${escapeHtml(monthLabel(previousMonth))}</b></div>
+      <div class="revenue-total-column current"><strong>${escapeHtml(compactMoney(currentAmount))}</strong><span style="height:${currentHeight.toFixed(2)}%"></span><b>${escapeHtml(monthLabel(currentMonth))}</b></div>
+    </div>
+    <div class="revenue-total-delta"><span>Écart de chiffre d’affaires estimé</span><strong>${escapeHtml(differenceLabel)}</strong><b class="${delta.className}">${escapeHtml(delta.label)}</b></div>
+  </div>`;
+}
+
+function renderComparison() {
+  const content = $('#comparison-content');
+  const toggle = $('#comparison-toggle');
+  content.classList.toggle('hidden', !comparisonOpen);
+  toggle.setAttribute('aria-expanded', String(comparisonOpen));
+  toggle.textContent = comparisonOpen ? 'Masquer le comparatif' : 'Afficher le comparatif';
+  if (!comparisonOpen) return;
+
+  const currentMonth = $('#month-filter').value;
+  const previousMonth = comparisonMonth();
+  const client = $('#client-filter').value;
+  const status = $('#status-filter').value;
+  const currentEntries = getBillingEntriesForPeriod(currentMonth, client, status);
+  const previousEntries = getBillingEntriesForPeriod(previousMonth, client, status);
+  const currentMinutes = currentEntries.reduce((sum, entry) => sum + entry.minutes, 0);
+  const previousMinutes = previousEntries.reduce((sum, entry) => sum + entry.minutes, 0);
+  const currentAmount = estimatedAmountForMinutes(currentMinutes);
+  const previousAmount = estimatedAmountForMinutes(previousMinutes);
+  const scope = [client === 'all' ? 'tous les clients' : client, status === 'all' ? 'tous les statuts' : `statut ${status}`].join(' · ');
+  $('#comparison-summary').textContent = `${monthLabel(currentMonth)} comparé à ${monthLabel(previousMonth)} · ${scope}.`;
+  $('#comparison-chart').innerHTML = [
+    comparisonMetricCard('Préparations', currentEntries.length, previousEntries.length, String(currentEntries.length), String(previousEntries.length), currentMonth, previousMonth),
+    comparisonMetricCard('Temps total', currentMinutes, previousMinutes, formatDuration(currentMinutes), formatDuration(previousMinutes), currentMonth, previousMonth),
+    comparisonMetricCard('Montant estimé*', currentAmount, previousAmount, formatMoney(currentAmount), formatMoney(previousAmount), currentMonth, previousMonth)
+  ].join('');
+  $('#comparison-revenue-chart').innerHTML = comparisonRevenueChart(currentAmount, previousAmount, currentMonth, previousMonth);
 }
 
 function groupByClient(filtered) {
@@ -907,15 +1044,16 @@ function renderBilling() {
   const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
   const reviewCount = filtered.filter((entry) => entry.status === ENTRY_STATUS_TO_VALIDATE).length;
   $('#kpi-grid').innerHTML = [
-    ['Clients', groups.length, ''], ['Préparations', filtered.length, ''], ['Temps total', formatDuration(minutes), 'orange'], ['Montant estimé*', formatMoney(minutes / 60 * RATE), 'green']
+    ['Clients', groups.length, ''], ['Préparations', filtered.length, ''], ['Temps total', formatDuration(minutes), 'orange'], ['Montant estimé*', formatMoney(estimatedAmountForMinutes(minutes)), 'green']
   ].map(([label,value,color]) => `<div class="kpi ${color}"><span>${label}</span><strong>${value}</strong></div>`).join('');
   $('#result-count').textContent = `${groups.length} client${groups.length > 1 ? 's' : ''} · ${reviewCount} saisie${reviewCount > 1 ? 's' : ''} à valider`;
   $('#billing-rows').innerHTML = groups.length ? groups.map((group) => {
     const status = billingGroupStatus(group);
     const statusClass = status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review';
-    return `<tr><td><strong>${escapeHtml(group.client)}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(group.minutes / 60 * RATE)}</td><td><span class="status ${statusClass}">${escapeHtml(status)}</span></td><td><button class="detail-button" type="button" data-client="${escapeHtml(group.client)}">Voir le détail →</button></td></tr>`;
+    return `<tr><td><strong>${escapeHtml(group.client)}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(estimatedAmountForMinutes(group.minutes))}</td><td><span class="status ${statusClass}">${escapeHtml(status)}</span></td><td><button class="detail-button" type="button" data-client="${escapeHtml(group.client)}">Voir le détail →</button></td></tr>`;
   }).join('') : '<tr><td class="empty" colspan="6">Aucune saisie ne correspond aux filtres.</td></tr>';
   $$('.detail-button').forEach((button) => button.addEventListener('click', () => showDetail(button.dataset.client)));
+  renderComparison();
 }
 
 function monthLabel(value) {
@@ -926,12 +1064,13 @@ function monthLabel(value) {
 
 function showDetail(client) {
   detailClient = client;
+  showInvoiceGenerationError('');
   const filtered = getFilteredEntries(client);
   const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
   $('#detail-title').textContent = client;
   $('#detail-month').textContent = monthLabel($('#month-filter').value);
-  $('#detail-kpis').innerHTML = [['Préparations',filtered.length],['Temps total',formatDuration(minutes)],['Montant estimé*',formatMoney(minutes / 60 * RATE)]].map(([label,value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(activityDisplayLabel(entry))}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td></tr>`).join('') : '<tr><td class="empty" colspan="7">Aucune préparation.</td></tr>';
+  $('#detail-kpis').innerHTML = [['Préparations',filtered.length],['Temps total',formatDuration(minutes)],['Montant estimé*',formatMoney(estimatedAmountForMinutes(minutes))]].map(([label,value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(activityDisplayLabel(entry))}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td><td>${formatMoney(estimatedAmountForEntry(entry))}</td></tr>`).join('') : '<tr><td class="empty" colspan="8">Aucune préparation.</td></tr>';
   showView('detail');
 }
 
@@ -948,7 +1087,7 @@ function exportCsv(client) {
   const filtered = getFilteredEntries(client);
   const lines = [
     ['Date','Client','Commande','Opérateur','Durée (minutes)','Durée affichée','Activité','Commentaire','Statut','Montant estimé CHF (tarif fictif)'],
-    ...filtered.map((entry) => [entry.date,entry.client,entry.order,entry.operator,entry.minutes,formatDuration(entry.minutes),activityDisplayLabel(entry),entry.comment,entry.status,(entry.minutes / 60 * RATE).toFixed(2).replace('.', ',')])
+    ...filtered.map((entry) => [entry.date,entry.client,entry.order,entry.operator,entry.minutes,formatDuration(entry.minutes),activityDisplayLabel(entry),entry.comment,entry.status,estimatedAmountForEntry(entry).toFixed(2).replace('.', ',')])
   ];
   const csv = '\uFEFF' + lines.map((line) => line.map(csvEscape).join(';')).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
@@ -1092,21 +1231,31 @@ function createPdfBlob(filtered, month) {
     y -= entryHeight;
   });
 
-  const objects = new Map();
-  const pageReferences = pages.map((_, index) => 6 + index * 2);
-  objects.set(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  objects.set(2, `<< /Type /Pages /Kids [${pageReferences.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`);
-  objects.set(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  objects.set(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
-  pages.forEach((lines, index) => {
-    const contentId = 5 + index * 2;
-    const pageId = contentId + 1;
+  return createPdfDocument(pages);
+}
+
+function createPdfDocument(pages) {
+  const pageCommands = pages.map((lines) => {
     let y = 800;
-    const commands = lines.map((line) => {
+    return lines.map((line) => {
       const command = `BT /${line.bold ? 'F2' : 'F1'} ${line.size} Tf 48 ${y} Td (${escapePdfString(line.text)}) Tj ET`;
       y -= line.gap;
       return command;
     }).join('\n');
+  });
+  return createPdfCommandDocument(pageCommands);
+}
+
+function createPdfCommandDocument(pageCommands) {
+  const objects = new Map();
+  const pageReferences = pageCommands.map((_, index) => 6 + index * 2);
+  objects.set(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  objects.set(2, `<< /Type /Pages /Kids [${pageReferences.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageCommands.length} >>`);
+  objects.set(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  objects.set(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  pageCommands.forEach((commands, index) => {
+    const contentId = 5 + index * 2;
+    const pageId = contentId + 1;
     objects.set(contentId, `<< /Length ${pdfByteArray(commands).length} >>\nstream\n${commands}\nendstream`);
     objects.set(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);
   });
@@ -1114,7 +1263,7 @@ function createPdfBlob(filtered, month) {
   const chunks = [pdfByteArray('%PDF-1.4\n%âãÏÓ\n')];
   const offsets = [0];
   let byteLength = chunks[0].length;
-  const objectCount = 4 + pages.length * 2;
+  const objectCount = 4 + pageCommands.length * 2;
   for (let id = 1; id <= objectCount; id += 1) {
     offsets[id] = byteLength;
     const chunk = pdfByteArray(`${id} 0 obj\n${objects.get(id)}\nendobj\n`);
@@ -1125,6 +1274,318 @@ function createPdfBlob(filtered, month) {
   const xref = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   chunks.push(pdfByteArray(xref));
   return new Blob(chunks, {type:'application/pdf'});
+}
+
+function showInvoiceGenerationError(message) {
+  const output = $('#invoice-generation-error');
+  output.textContent = message;
+  output.classList.toggle('hidden', !message);
+}
+
+function invoiceEntriesForDetail() {
+  const month = $('#month-filter').value;
+  return entries
+    .filter((entry) => entry.date.startsWith(month) && entry.client === detailClient)
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+}
+
+function seedBillingProfileForEntries(client, invoiceEntries) {
+  const knownOrders = seedOrders[client];
+  if (!knownOrders || !seedBillingProfiles[client] || !invoiceEntries.length) return null;
+  const allReferencesKnown = invoiceEntries.every((entry) => knownOrders.some((order) => referenceKey(order) === referenceKey(entry.order)));
+  return allReferencesKnown ? {...seedBillingProfiles[client]} : null;
+}
+
+function invoiceSlug(value) {
+  const slug = normalizeUserInput(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  return slug || 'client';
+}
+
+function invoiceReference(month, client) {
+  return `DEMO-${month.replace('-', '')}-${invoiceSlug(client).toUpperCase()}`;
+}
+
+function pdfColor(color) {
+  return color.map((value) => (value / 255).toFixed(3)).join(' ');
+}
+
+function pdfTextCommand(text, x, y, size, {bold = false, color = [23, 43, 58]} = {}) {
+  return `${pdfColor(color)} rg BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${escapePdfString(text)}) Tj ET`;
+}
+
+function pdfTextRightCommand(text, rightX, y, size, options = {}) {
+  const width = sanitizePdfText(text).length * size * (options.bold ? 0.56 : 0.5);
+  return pdfTextCommand(text, Math.max(32, rightX - width), y, size, options);
+}
+
+function pdfRectCommand(x, y, width, height, fill, stroke = null) {
+  const fillCommand = `${pdfColor(fill)} rg`;
+  const strokeCommand = stroke ? ` ${pdfColor(stroke)} RG 1 w` : '';
+  return `q ${fillCommand}${strokeCommand} ${x} ${y} ${width} ${height} re ${stroke ? 'B' : 'f'} Q`;
+}
+
+function invoiceAddressCommands(x, y, title, name, addressLines) {
+  const navy = [16, 42, 67];
+  const muted = [102, 120, 133];
+  const commands = [
+    pdfRectCommand(x, y, 245, 108, [247, 249, 250], [215, 224, 230]),
+    pdfRectCommand(x, y, 5, 108, [244, 123, 32]),
+    pdfTextCommand(title, x + 18, y + 85, 8, {bold:true, color:[214, 95, 11]})
+  ];
+  let cursor = y + 64;
+  wrapPdfText(truncatePdfText(name, 72), 37).slice(0, 2).forEach((line) => {
+    commands.push(pdfTextCommand(line, x + 18, cursor, 10, {bold:true, color:navy}));
+    cursor -= 13;
+  });
+  addressLines.slice(0, 3).forEach((line) => {
+    commands.push(pdfTextCommand(truncatePdfText(line, 48), x + 18, cursor - 2, 8, {color:muted}));
+    cursor -= 11;
+  });
+  return commands;
+}
+
+function invoiceMetricCommands(x, label, value) {
+  return [
+    pdfRectCommand(x, 482, 161, 62, [255, 255, 255], [215, 224, 230]),
+    pdfTextCommand(label, x + 14, 523, 7, {bold:true, color:[102, 120, 133]}),
+    pdfTextCommand(value, x + 14, 497, 14, {bold:true, color:[16, 42, 67]})
+  ];
+}
+
+function invoiceCoverCommands(profile, invoiceEntries, month) {
+  const navy = [16, 42, 67];
+  const orange = [244, 123, 32];
+  const ink = [23, 43, 58];
+  const muted = [102, 120, 133];
+  const totalMinutes = invoiceEntries.reduce((sum, entry) => sum + entry.minutes, 0);
+  const totalAmount = formatMoney(estimatedAmountForMinutes(totalMinutes));
+  const reference = invoiceReference(month, detailClient);
+  const generatedOn = new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'long', year:'numeric'}).format(new Date());
+  const clientAddress = [
+    normalizeUserInput(profile.name) !== normalizeUserInput(detailClient) ? `Raison sociale : ${truncatePdfText(profile.name, INVOICE_FIELD_LIMITS.name)}` : '',
+    truncatePdfText(profile.street, INVOICE_FIELD_LIMITS.street),
+    `${truncatePdfText(profile.postalCode, INVOICE_FIELD_LIMITS.postalCode)} ${truncatePdfText(profile.city, INVOICE_FIELD_LIMITS.city)} · ${truncatePdfText(profile.country, INVOICE_FIELD_LIMITS.country)}`
+  ].filter(Boolean);
+  const commands = [
+    pdfRectCommand(0, 708, 595, 134, navy),
+    pdfRectCommand(0, 708, 595, 6, orange),
+    pdfTextCommand('SOMATRA', 42, 799, 24, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('LOGISTIQUE INTERNATIONALE · DEPUIS 1959', 43, 780, 7, {bold:true, color:[190, 207, 218]}),
+    pdfRectCommand(424, 792, 129, 25, orange),
+    pdfTextCommand('DOCUMENT FICTIF', 440, 800, 8, {bold:true, color:navy}),
+    pdfTextCommand('FACTURE DE DÉMONSTRATION', 42, 738, 18, {bold:true, color:[255, 255, 255]}),
+    pdfTextRightCommand(reference, 553, 750, 8, {bold:true, color:[255, 255, 255]}),
+    pdfTextRightCommand(`Générée le ${generatedOn}`, 553, 733, 8, {color:[190, 207, 218]}),
+    ...invoiceAddressCommands(42, 573, 'ÉMETTEUR FICTIF', 'Somatra · Prototype premium', ['Rue de la Logistique 1', '1000 Ville exemple', 'Suisse']),
+    ...invoiceAddressCommands(308, 573, 'DESTINATAIRE FICTIF · CLIENT APP', detailClient, clientAddress),
+    ...invoiceMetricCommands(42, 'PÉRIODE', monthLabel(month)),
+    ...invoiceMetricCommands(217, 'PRÉPARATIONS', String(invoiceEntries.length)),
+    ...invoiceMetricCommands(392, 'TEMPS TOTAL', formatDuration(totalMinutes)),
+    pdfTextCommand('PRESTATION', 42, 449, 9, {bold:true, color:navy}),
+    pdfRectCommand(42, 407, 511, 30, navy),
+    pdfTextCommand('DESCRIPTION', 54, 418, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('TEMPS APP', 330, 418, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('TARIF FICTIF', 405, 418, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('MONTANT', 493, 418, 7, {bold:true, color:[255, 255, 255]}),
+    pdfRectCommand(42, 346, 511, 61, [247, 249, 250], [215, 224, 230]),
+    pdfTextCommand('Prestations logistiques mensuelles', 54, 381, 10, {bold:true, color:ink}),
+    pdfTextCommand(`Consolidation des temps · ${monthLabel(month)}`, 54, 363, 8, {color:muted}),
+    pdfTextCommand(formatDuration(totalMinutes), 330, 374, 9, {bold:true, color:ink}),
+    pdfTextCommand(`${formatMoney(RATE)} / h`, 405, 374, 8, {color:ink}),
+    pdfTextRightCommand(totalAmount, 541, 374, 10, {bold:true, color:ink}),
+    pdfTextCommand(`Source application : ${totalMinutes} min × ${formatMoney(RATE)} / 60`, 54, 351, 7, {color:muted}),
+    pdfRectCommand(342, 252, 211, 73, navy),
+    pdfRectCommand(342, 252, 7, 73, orange),
+    pdfTextCommand('TOTAL ESTIMÉ', 363, 299, 8, {bold:true, color:[190, 207, 218]}),
+    pdfTextRightCommand(totalAmount, 535, 270, 20, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('TVA non calculée · aucune demande de paiement', 42, 224, 8, {bold:true, color:[184, 58, 58]}),
+    pdfTextCommand('Cette maquette premium illustre un futur parcours client. Elle ne constitue pas une facture réelle.', 42, 207, 8, {color:muted}),
+    pdfRectCommand(42, 101, 511, 76, [255, 244, 235], [244, 123, 32]),
+    pdfTextCommand('ANNEXE DE TRAÇABILITÉ', 60, 151, 9, {bold:true, color:[214, 95, 11]}),
+    pdfTextCommand(`${invoiceEntries.length} préparation${invoiceEntries.length > 1 ? 's' : ''} détaillée${invoiceEntries.length > 1 ? 's' : ''} sur les pages suivantes`, 60, 129, 12, {bold:true, color:navy}),
+    pdfTextCommand('Dates, références, activités, durées, opérateurs et commentaires.', 60, 113, 8, {color:muted})
+  ];
+  return commands;
+}
+
+function invoiceAnnexPageCommands(reference, month, pageEntries, pageIndex) {
+  const navy = [16, 42, 67];
+  const orange = [244, 123, 32];
+  const muted = [102, 120, 133];
+  const commands = [
+    pdfRectCommand(0, 775, 595, 67, navy),
+    pdfRectCommand(0, 775, 595, 5, orange),
+    pdfTextCommand('SOMATRA', 42, 810, 15, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('ANNEXE DE TRAÇABILITÉ · DOCUMENT FICTIF', 42, 791, 8, {bold:true, color:[190, 207, 218]}),
+    pdfTextRightCommand(reference, 553, 802, 8, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand(`Détail des préparations · ${monthLabel(month)}`, 42, 742, 16, {bold:true, color:navy}),
+    pdfTextCommand('Chaque ligne reprend les données affichées dans le détail client de l’application.', 42, 722, 8, {color:muted}),
+    pdfRectCommand(42, 678, 511, 28, navy),
+    pdfTextCommand('DATE', 52, 688, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('RÉFÉRENCE / DÉTAIL', 103, 688, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('ACTIVITÉ', 281, 688, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('DURÉE', 414, 688, 7, {bold:true, color:[255, 255, 255]}),
+    pdfTextCommand('MONTANT*', 483, 688, 7, {bold:true, color:[255, 255, 255]})
+  ];
+  let cursor = 678;
+  pageEntries.forEach((entry, index) => {
+    const rowBottom = cursor - 56;
+    const activity = truncatePdfText(activityDisplayLabel(entry), 25);
+    const order = truncatePdfText(entry.order, 30);
+    const operator = truncatePdfText(entry.operator, 24);
+    const comment = truncatePdfText(entry.comment || 'Sans commentaire', 48);
+    commands.push(pdfRectCommand(42, rowBottom, 511, 56, index % 2 ? [247, 249, 250] : [255, 255, 255], [229, 235, 239]));
+    commands.push(pdfTextCommand(formatShortDate(entry.date), 52, cursor - 23, 8, {bold:true, color:navy}));
+    commands.push(pdfTextCommand(order, 103, cursor - 20, 9, {bold:true, color:navy}));
+    commands.push(pdfTextCommand(`${operator} · ${entry.status} · ${comment}`, 103, cursor - 39, 7, {color:muted}));
+    commands.push(pdfTextCommand(activity, 281, cursor - 23, 8, {color:navy}));
+    commands.push(pdfTextRightCommand(formatDuration(entry.minutes), 462, cursor - 23, 8, {bold:true, color:navy}));
+    commands.push(pdfTextRightCommand(formatMoney(estimatedAmountForEntry(entry)), 541, cursor - 23, 8, {bold:true, color:navy}));
+    cursor -= 56;
+  });
+  commands.push(pdfTextCommand(`Annexe ${pageIndex} · * Tarif fictif : ${formatMoney(RATE)} / h`, 42, 38, 7, {color:muted}));
+  return commands;
+}
+
+function createInvoicePdfBlob(profile, invoiceEntries, month) {
+  const reference = invoiceReference(month, detailClient);
+  const pageCommands = [invoiceCoverCommands(profile, invoiceEntries, month).join('\n')];
+  const entriesPerPage = 10;
+  for (let index = 0; index < invoiceEntries.length; index += entriesPerPage) {
+    const pageEntries = invoiceEntries.slice(index, index + entriesPerPage);
+    pageCommands.push(invoiceAnnexPageCommands(reference, month, pageEntries, pageCommands.length).join('\n'));
+  }
+  const totalPages = pageCommands.length;
+  pageCommands.forEach((commands, index) => {
+    pageCommands[index] = `${commands}\n${pdfTextRightCommand(`Page ${index + 1} / ${totalPages}`, 553, 38, 7, {color:[102, 120, 133]})}`;
+  });
+  return createPdfCommandDocument(pageCommands);
+}
+
+function clearInvoicePdf() {
+  if (invoicePdfUrl) URL.revokeObjectURL(invoicePdfUrl);
+  invoicePdfUrl = null;
+  invoicePdfBlob = null;
+  invoicePdfFilename = '';
+  $('#invoice-preview').removeAttribute('data');
+}
+
+function resetInvoiceForm() {
+  const form = $('#invoice-client-form');
+  form.reset();
+  form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute('aria-invalid'));
+  $('#invoice-form-error').textContent = '';
+  $('#invoice-form-error').classList.add('hidden');
+}
+
+function closeInvoiceDialog() {
+  const dialog = $('#invoice-dialog');
+  if (dialog.open) dialog.close();
+}
+
+function displayInvoicePreview(profile) {
+  try {
+    clearInvoicePdf();
+    const month = $('#month-filter').value;
+    invoicePdfBlob = createInvoicePdfBlob(profile, pendingInvoiceEntries, month);
+    invoicePdfUrl = URL.createObjectURL(invoicePdfBlob);
+    invoicePdfFilename = `somatra-facture-fictive-${month}-${invoiceSlug(detailClient)}.pdf`;
+    $('#invoice-preview').data = invoicePdfUrl;
+    $('#invoice-client-form').classList.add('hidden');
+    $('#invoice-preview-panel').classList.remove('hidden');
+    $('#invoice-dialog-title').textContent = 'Aperçu de la facture fictive';
+    $('#invoice-dialog-description').textContent = 'Vérifiez puis téléchargez cette présentation premium générée localement.';
+    $('#download-invoice-pdf').focus({preventScroll:true});
+  } catch (error) {
+    clearInvoicePdf();
+    const form = $('#invoice-client-form');
+    if (!form.classList.contains('hidden')) {
+      const output = $('#invoice-form-error');
+      output.textContent = 'Le PDF n’a pas pu être créé dans ce navigateur. Réessayez après avoir rechargé la page.';
+      output.classList.remove('hidden');
+      output.focus?.();
+      return;
+    }
+    closeInvoiceDialog();
+    showInvoiceGenerationError('Le PDF n’a pas pu être créé dans ce navigateur. Réessayez après avoir rechargé la page.');
+  }
+}
+
+function openInvoiceGeneration() {
+  showInvoiceGenerationError('');
+  if (activeProfile !== 'billing' || currentView !== 'detail' || !detailClient) return;
+  const invoiceEntries = invoiceEntriesForDetail();
+  if (!invoiceEntries.length) {
+    showInvoiceGenerationError('Aucune saisie n’est disponible pour ce client et ce mois.');
+    return;
+  }
+  const blockedCount = invoiceEntries.filter((entry) => entry.status !== ENTRY_STATUS_VALIDATED).length;
+  if (blockedCount) {
+    showInvoiceGenerationError(`${blockedCount} saisie${blockedCount > 1 ? 's doivent' : ' doit'} encore être validée${blockedCount > 1 ? 's' : ''} pour ce client et ce mois, y compris parmi les lignes éventuellement masquées par le filtre de statut.`);
+    return;
+  }
+
+  invoiceDialogTrigger = document.activeElement;
+  pendingInvoiceEntries = invoiceEntries;
+  clearInvoicePdf();
+  resetInvoiceForm();
+  $('#invoice-preview-panel').classList.add('hidden');
+  $('#invoice-dialog-title').textContent = 'Générer la facture client';
+  $('#invoice-dialog-description').textContent = 'Maquette premium générée localement, sans valeur comptable ni transmission.';
+  const profile = seedBillingProfileForEntries(detailClient, invoiceEntries);
+  const form = $('#invoice-client-form');
+  form.classList.toggle('hidden', Boolean(profile));
+  $('#invoice-dialog').showModal();
+  if (profile) displayInvoicePreview(profile);
+  else {
+    form.elements.name.value = detailClient;
+    form.elements.name.focus({preventScroll:true});
+  }
+}
+
+function invoiceProfileFromForm(form) {
+  const profile = {};
+  const errors = [];
+  Object.entries(INVOICE_FIELD_LIMITS).forEach(([name, maximumLength]) => {
+    const value = normalizeUserInput(form.elements[name].value);
+    profile[name] = value;
+    if (!value) errors.push({name, message:'Tous les champs de l’adresse fictive sont obligatoires.'});
+    else if ([...value].length > maximumLength) errors.push({name, message:`Le champ ${name} dépasse ${maximumLength} caractères.`});
+  });
+  form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute('aria-invalid'));
+  errors.forEach(({name}) => form.elements[name].setAttribute('aria-invalid', 'true'));
+  const output = $('#invoice-form-error');
+  output.textContent = [...new Set(errors.map(({message}) => message))].join(' ');
+  output.classList.toggle('hidden', errors.length === 0);
+  if (errors.length) {
+    form.elements[errors[0].name].focus();
+    return null;
+  }
+  return profile;
+}
+
+function submitInvoiceClientForm(event) {
+  event.preventDefault();
+  const profile = invoiceProfileFromForm(event.currentTarget);
+  if (profile) displayInvoicePreview(profile);
+}
+
+function downloadInvoicePdf() {
+  if (!invoicePdfBlob || !invoicePdfUrl) return;
+  const anchor = document.createElement('a');
+  anchor.href = invoicePdfUrl;
+  anchor.download = invoicePdfFilename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  toast('Téléchargement de la facture fictive lancé');
 }
 
 function clearTrackingPdf() {
@@ -1223,6 +1684,11 @@ function closeResetDialog() {
   if (dialog.open) dialog.close();
 }
 
+function setResetActionsDisabled(disabled) {
+  $('#confirm-reset').disabled = disabled;
+  $('#load-full-demo').disabled = disabled;
+}
+
 function restoreResetSnapshot(storage, snapshot) {
   let compensationFailed = false;
   snapshot.forEach((value, key) => {
@@ -1246,7 +1712,7 @@ function restoreResetSnapshot(storage, snapshot) {
 function resetDemo() {
   if (resetInProgress) return;
   resetInProgress = true;
-  $('#confirm-reset').disabled = true;
+  setResetActionsDisabled(true);
   showResetError('');
   let storage;
   let snapshot;
@@ -1296,10 +1762,42 @@ function resetDemo() {
     }
     const compensationFailed = storage && snapshot ? restoreResetSnapshot(storage, snapshot) : false;
     resetInProgress = false;
-    $('#confirm-reset').disabled = false;
+    setResetActionsDisabled(false);
     showResetError(compensationFailed
       ? 'La réinitialisation a échoué et certaines données locales n’ont pas pu être restaurées ou vérifiées. Rechargez la page, puis réessayez.'
       : 'La réinitialisation a échoué. Vos données locales ont été conservées ou restaurées. Réessayez après avoir rechargé la page.');
+    return;
+  }
+
+  window.location.reload();
+}
+
+function loadFullDemo() {
+  if (resetInProgress) return;
+  resetInProgress = true;
+  setResetActionsDisabled(true);
+  showResetError('');
+  let storage;
+  let snapshot;
+  try {
+    storage = window.localStorage;
+    snapshot = new Map([...RESET_STORAGE_VALUES.keys()].map((key) => [key, storage.getItem(key)]));
+    const demoStorageValues = new Map([
+      [STORAGE_KEY, JSON.stringify(seedEntries)],
+      [CLIENTS_STORAGE_KEY, JSON.stringify(seedOrders)],
+      [OPEN_TASKS_STORAGE_KEY, '[]']
+    ]);
+    demoStorageValues.forEach((value, key) => storage.setItem(key, value));
+    demoStorageValues.forEach((value, key) => {
+      if (storage.getItem(key) !== value) throw new Error('Vérification du stockage impossible');
+    });
+  } catch (error) {
+    const compensationFailed = storage && snapshot ? restoreResetSnapshot(storage, snapshot) : false;
+    resetInProgress = false;
+    setResetActionsDisabled(false);
+    showResetError(compensationFailed
+      ? 'Le chargement a échoué et certaines données locales n’ont pas pu être restaurées ou vérifiées. Rechargez la page, puis réessayez.'
+      : 'Le chargement a échoué. Vos données locales ont été conservées ou restaurées. Réessayez après avoir rechargé la page.');
     return;
   }
 
@@ -1355,6 +1853,12 @@ $('#confirm-activity').addEventListener('change', () => {
   if (isAllowedActivity($('#confirm-activity').value)) clearTaskFieldError('confirm-activity', 'confirm-activity-error');
 });
 ['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
+$('#comparison-toggle').addEventListener('click', () => {
+  comparisonOpen = !comparisonOpen;
+  renderComparison();
+  if (comparisonOpen) $('#comparison-content').scrollIntoView({block:'nearest'});
+});
+$('#comparison-period').addEventListener('change', renderComparison);
 ['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', () => {
   trackingVisibleLimit = TRACKING_BATCH_SIZE;
   editingEntryId = null;
@@ -1369,6 +1873,24 @@ $('#tracking-load-more').addEventListener('click', () => {
 });
 $('#export-csv').addEventListener('click', () => exportCsv());
 $('#detail-export').addEventListener('click', () => exportCsv(detailClient));
+$('#generate-invoice').addEventListener('click', openInvoiceGeneration);
+$('#invoice-client-form').addEventListener('submit', submitInvoiceClientForm);
+$('#cancel-invoice-form').addEventListener('click', closeInvoiceDialog);
+$('#download-invoice-pdf').addEventListener('click', downloadInvoicePdf);
+$('#close-invoice-dialog').addEventListener('click', closeInvoiceDialog);
+$('#invoice-dialog').addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeInvoiceDialog();
+});
+$('#invoice-dialog').addEventListener('close', () => {
+  clearInvoicePdf();
+  resetInvoiceForm();
+  pendingInvoiceEntries = [];
+  $('#invoice-client-form').classList.add('hidden');
+  $('#invoice-preview-panel').classList.add('hidden');
+  if (invoiceDialogTrigger && invoiceDialogTrigger.isConnected) invoiceDialogTrigger.focus();
+  invoiceDialogTrigger = null;
+});
 $('#create-tracking-pdf').addEventListener('click', createTrackingPdf);
 $('#download-tracking-pdf').addEventListener('click', downloadTrackingPdf);
 $('#send-tracking-pdf').addEventListener('click', simulateTrackingPdfSend);
@@ -1380,6 +1902,7 @@ $('#pdf-dialog').addEventListener('cancel', (event) => {
 $('#open-reset-dialog').addEventListener('click', openResetDialog);
 $('#close-reset-dialog').addEventListener('click', closeResetDialog);
 $('#cancel-reset').addEventListener('click', closeResetDialog);
+$('#load-full-demo').addEventListener('click', loadFullDemo);
 $('#confirm-reset').addEventListener('click', resetDemo);
 $('#reset-dialog').addEventListener('cancel', (event) => {
   event.preventDefault();

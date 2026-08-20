@@ -33,10 +33,17 @@ Prototype web statique, responsive et mobile-first pour démontrer le suivi du t
 
 ### Profil Facturation
 
+- Jeu initial immédiatement démontrable avec **six clients fictifs, de Client A à Client F**, 240 préparations validées et environ **60 000 CHF estimés sur le mois courant**. Août 2025 présente volontairement seulement cinq clients, 125 préparations et environ 42 000 CHF afin de rendre l’évolution N−1 immédiatement visible.
 - Synthèse mensuelle fictive en CHF : clients, préparations, temps total et montant estimé.
 - Filtres par mois, client et statut.
+- Comparatif graphique affiché à la demande entre le mois sélectionné et le mois précédent ou le même mois N−1, avec KPI d’évolution et histogramme du chiffre d’affaires estimé global selon les filtres actifs, sans inventer de données historiques absentes.
 - Détail des préparations d’un client, avec leur activité.
 - Export CSV des résultats filtrés, avec l’activité et des montants estimés en CHF calculés selon un tarif fictif.
+- Génération locale d’une facture PDF explicitement fictive depuis le détail client :
+  - toutes les saisies du client et du mois doivent être **Validé**, y compris celles masquées par le filtre de statut ;
+  - les clients des commandes fictives initiales utilisent une adresse générique intégrée ;
+  - une référence inconnue demande une adresse synthétique uniquement pour le PDF courant, sans la conserver dans le navigateur ;
+  - la présentation premium reprend l’identité visuelle Somatra, le client et le mois affichés dans l’application, les indicateurs mensuels, le total estimé et une annexe paginée ; chaque ligne reprend la date, la référence, l’opérateur, l’activité, la durée, le statut, le commentaire et le montant calculé avec le même tarif fictif que le détail client, sans TVA réelle, transmission ni valeur comptable.
 
 Les informations financières et l’export CSV sont visibles uniquement dans l’interface **Facturation** ; aucun prix n’apparaît dans l’interface **Magasinier** ni dans son relevé PDF. Cette séparation est simulée et ne repose sur aucune authentification réelle.
 
@@ -49,7 +56,7 @@ Les informations financières et l’export CSV sont visibles uniquement dans l�
 5. À la fin d’une préparation, ajuster si nécessaire la durée, confirmer obligatoirement l’activité et enregistrer le commentaire séparément.
 6. Dans **Suivi**, filtrer les saisies, consulter les KPI, toucher une ligne pour modifier ses informations, notamment l’activité, puis sélectionner un mois afin d’afficher, télécharger et simuler l’envoi du relevé PDF non financier.
 7. Revenir à **Profil** et choisir **Facturation**.
-8. Dans **Facturation**, filtrer la synthèse, ouvrir le détail d’un client puis exporter le CSV fictif.
+8. Dans **Facturation**, filtrer la synthèse, afficher le comparatif M−1 ou N−1, ouvrir le détail d’un client, exporter le CSV fictif ou générer une facture PDF de démonstration lorsque toutes les saisies mensuelles du client sont validées.
 
 ## Lancer localement
 
@@ -84,7 +91,9 @@ L’application utilise ou peut lire trois clés :
 - `somatra-demo-clients-v1` : clients et commandes fictifs ; cette clé peut être lue, mais n’est plus écrite dans le flux courant ;
 - `somatra-demo-open-preparations-v1` : préparations ouvertes et état des chronomètres.
 
-Depuis l’écran **Profil**, le bouton **Réinitialiser clients et données** ouvre une confirmation détaillant la suppression des clients et références ajoutés, des préparations et chronomètres ouverts, ainsi que des temps et modifications locales. L’ouverture ou la fermeture du dialogue, **Annuler**, Échap et un clic hors du dialogue ne modifient rien. Seul **Tout réinitialiser** écrit les valeurs JSON vides `[]`, `{}` et `[]` dans les trois clés Somatra ci-dessus, vérifie ces valeurs, vide immédiatement le Suivi, la Facturation et les préparations ouvertes, puis recharge la page. Toute autre clé du navigateur reste intacte.
+Depuis l’écran **Profil**, le bouton **Gérer les données de démonstration** ouvre un dialogue présentant deux actions explicites. L’ouverture ou la fermeture du dialogue, **Annuler**, Échap et un clic hors du dialogue ne modifient rien. **Tout réinitialiser** écrit les valeurs JSON vides `[]`, `{}` et `[]` dans les trois clés Somatra ci-dessus, vérifie ces valeurs, vide immédiatement le Suivi, la Facturation et les préparations ouvertes, puis recharge la page. Toute autre clé du navigateur reste intacte.
+
+Depuis ce même dialogue, **Charger la démo complète** remplace explicitement les trois valeurs Somatra par le jeu fictif initial Client A à Client F et ferme les éventuelles préparations ouvertes. Cette action permet de retrouver les données enrichies dans un navigateur qui conservait une ancienne démonstration ; elle vérifie les écritures et restaure les valeurs précédentes en cas d’échec.
 
 Une clé absente représente un premier lancement et charge les données fictives initiales. Une clé présente avec sa structure JSON vide représente au contraire une réinitialisation confirmée : le Suivi reste donc vide après les rechargements suivants. La prochaine référence inconnue repart de **Client A**.
 
@@ -93,6 +102,8 @@ Si une écriture ou sa vérification échoue, l’application restaure puis vér
 Cette réinitialisation concerne exclusivement des données fictives locales : aucune clé étrangère, donnée réelle ou transmission réseau n’est impliquée.
 
 La propriété facultative `activity` est additive sur les saisies et préparations ouvertes. Les anciennes données sans ce champ restent lisibles avec le libellé **Non renseignée** ; une ancienne valeur inconnue est affichée comme texte sûr, mais ne devient jamais une option valide à la prochaine sauvegarde. Le chargement n’effectue aucune réécriture destructive pour compléter ou normaliser ce champ, et les trois clés restent inchangées.
+
+Les coordonnées synthétiques saisies pour la facture fictive d’un nouveau client restent uniquement en mémoire pendant l’aperçu. Elles sont effacées à la fermeture du dialogue et ne modifient aucune des trois clés `localStorage`.
 
 Pour les saisies enregistrées, l’ancien statut exact **À contrôler** est interprété comme
 **À valider** en mémoire afin de rester compatible avec les données existantes. Le
@@ -120,6 +131,7 @@ Les pull requests vers `main` exécutent la validation sans publier le site. Le 
 - Le flux caméra est analysé localement par le navigateur : aucune image n’est envoyée ni stockée par l’application.
 - Le scan dépend de `getUserMedia`, de `BarcodeDetector`, d’une caméra compatible, de l’autorisation de l’utilisateur et des règles de contexte sécurisé du navigateur. La prise en charge varie selon le navigateur et l’appareil ; la saisie manuelle reste disponible.
 - Le stockage est local au navigateur, sans chiffrement applicatif, synchronisation serveur ni contrôle d’accès : toute personne utilisant le même profil de navigateur peut potentiellement consulter ou modifier l’état de démonstration. Le PDF est construit dans le navigateur sous forme de `Blob` `application/pdf` et sa simulation d’envoi ne transmet rien.
+- La facture PDF du profil Facturation est un document de démonstration sans valeur comptable, sans TVA réelle, sans numérotation légale et sans demande de paiement.
 
 ## Limites avant une mise en production
 
