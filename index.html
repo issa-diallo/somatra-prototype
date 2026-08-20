@@ -38,7 +38,7 @@
             <span class="arrow">→</span>
           </button>
         </div>
-        <button id="open-reset-dialog" class="reset-demo-trigger" type="button">Réinitialiser clients et données</button>
+        <button id="open-reset-dialog" class="reset-demo-trigger" type="button">Gérer les données de démonstration</button>
         <div class="notice"><strong>Environnement de démonstration</strong><br>Aucune authentification, aucune donnée réelle, aucune transmission serveur.</div>
       </div>
     </section>
@@ -160,6 +160,30 @@
         <button id="export-csv" class="primary export-button" type="button">⇩ Exporter en CSV</button>
       </div>
       <div id="kpi-grid" class="kpi-grid"></div>
+      <section class="comparison-panel panel" aria-labelledby="comparison-title">
+        <div class="comparison-heading">
+          <div><div class="eyebrow">Analyse à la demande</div><h2 id="comparison-title">Comparer les périodes</h2><p>Visualisez l’évolution des préparations, du temps et du montant estimé selon les filtres actifs.</p></div>
+          <button id="comparison-toggle" class="secondary" type="button" aria-expanded="false" aria-controls="comparison-content">Afficher le comparatif</button>
+        </div>
+        <div id="comparison-content" class="comparison-content hidden">
+          <div class="comparison-toolbar">
+            <label for="comparison-period">Comparer avec</label>
+            <select id="comparison-period">
+              <option value="previous-year">Le même mois N−1</option>
+              <option value="previous-month">Le mois précédent</option>
+            </select>
+          </div>
+          <p id="comparison-summary" class="comparison-summary" aria-live="polite"></p>
+          <div id="comparison-chart" class="comparison-chart"></div>
+          <section class="comparison-revenue" aria-labelledby="comparison-revenue-title">
+            <div class="comparison-revenue-heading">
+              <div><div class="eyebrow">Évolution annuelle</div><h3 id="comparison-revenue-title">Chiffre d’affaires estimé</h3><p>Comparaison globale sur le périmètre actuellement filtré.</p></div>
+            </div>
+            <div id="comparison-revenue-chart" class="comparison-revenue-chart"></div>
+          </section>
+          <p class="table-note">Comparaison de démonstration calculée localement à partir des données disponibles.</p>
+        </div>
+      </section>
       <div class="panel table-panel">
         <div class="section-heading"><div><h2>Temps par client</h2><p id="result-count"></p></div><span class="fictional-rate">Tarif fictif : 42.00 CHF / h</span></div>
         <div class="table-scroll"><table><thead><tr><th>Client</th><th>Préparations</th><th>Temps total</th><th>Montant estimé*</th><th>Statut</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="billing-rows"></tbody></table></div>
@@ -170,11 +194,16 @@
     <section id="view-detail" class="view hidden" aria-labelledby="detail-title">
       <div class="page-heading">
         <div><button class="back-button" type="button" data-action="billing">← Synthèse mensuelle</button><div class="eyebrow">Détail client · <span id="detail-month"></span></div><h1 id="detail-title">Client A</h1><p>Liste des préparations enregistrées.</p></div>
-        <button id="detail-export" class="primary" type="button">⇩ Exporter ce client</button>
+        <div class="detail-actions">
+          <button id="detail-export" class="secondary" type="button">⇩ Exporter ce client</button>
+          <button id="generate-invoice" class="primary" type="button">Générer la facture</button>
+          <p id="invoice-generation-error" class="invoice-generation-error hidden" role="alert" aria-live="assertive"></p>
+        </div>
       </div>
       <div id="detail-kpis" class="kpi-grid detail-kpis"></div>
       <div class="panel table-panel">
-        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Commande</th><th>Opérateur</th><th>Durée</th><th>Activité</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Commande</th><th>Opérateur</th><th>Durée</th><th>Activité</th><th>Commentaire</th><th>Statut</th><th>Montant estimé*</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
+        <p class="table-note">* Chaque montant reprend la même durée et le même tarif fictif de 42.00 CHF / h que la facture PDF.</p>
       </div>
     </section>
   </main>
@@ -212,25 +241,61 @@
     </div>
   </dialog>
 
+  <dialog id="invoice-dialog" class="pdf-dialog invoice-dialog" aria-labelledby="invoice-dialog-title" aria-describedby="invoice-dialog-description">
+    <div class="pdf-dialog-content">
+      <div class="dialog-heading">
+        <div><div class="eyebrow">Facturation fictive</div><h2 id="invoice-dialog-title">Générer la facture client</h2></div>
+        <button id="close-invoice-dialog" class="dialog-close" type="button" aria-label="Fermer la facture fictive">×</button>
+      </div>
+      <p id="invoice-dialog-description">Maquette premium générée localement, sans valeur comptable ni transmission.</p>
+      <form id="invoice-client-form" class="invoice-client-form hidden" novalidate>
+        <div class="invoice-form-intro">
+          <strong>Nouveau client détecté</strong>
+          <p>Complétez une adresse entièrement fictive pour ce PDF uniquement. Ces informations ne seront pas enregistrées.</p>
+        </div>
+        <div class="invoice-form-grid">
+          <label>Raison sociale<input name="name" type="text" maxlength="120" autocomplete="off" required></label>
+          <label>Rue<input name="street" type="text" maxlength="160" autocomplete="off" required></label>
+          <label>Code postal<input name="postalCode" type="text" maxlength="20" autocomplete="off" required></label>
+          <label>Ville<input name="city" type="text" maxlength="100" autocomplete="off" required></label>
+          <label>Pays<input name="country" type="text" maxlength="80" autocomplete="off" required></label>
+        </div>
+        <p id="invoice-form-error" class="invoice-form-error hidden" role="alert" aria-live="assertive"></p>
+        <div class="invoice-form-actions"><button id="cancel-invoice-form" class="secondary" type="button">Annuler</button><button class="primary" type="submit">Créer l’aperçu PDF</button></div>
+      </form>
+      <div id="invoice-preview-panel" class="hidden">
+        <object id="invoice-preview" class="pdf-preview" type="application/pdf" title="Aperçu de la facture fictive">
+          <p>Votre navigateur ne peut pas afficher cet aperçu PDF. Utilisez le bouton de téléchargement.</p>
+        </object>
+        <div class="pdf-dialog-actions">
+          <button id="download-invoice-pdf" class="primary" type="button">Télécharger le PDF</button>
+        </div>
+        <p class="pdf-simulation-note">Facture fictive uniquement : aucune TVA réelle, écriture comptable, transmission ou demande de paiement.</p>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="reset-dialog" class="reset-dialog" aria-labelledby="reset-dialog-title" aria-describedby="reset-dialog-description">
     <div class="reset-dialog-content">
       <div class="dialog-heading">
-        <div><div class="eyebrow">Vider les données locales</div><h2 id="reset-dialog-title">Réinitialiser la démonstration&nbsp;?</h2></div>
-        <button id="close-reset-dialog" class="dialog-close" type="button" aria-label="Fermer sans réinitialiser">×</button>
+        <div><div class="eyebrow">Données locales fictives</div><h2 id="reset-dialog-title">Gérer la démonstration</h2></div>
+        <button id="close-reset-dialog" class="dialog-close" type="button" aria-label="Fermer sans modifier les données">×</button>
       </div>
       <div id="reset-dialog-description">
-        <p>Cette action vide uniquement les données fictives Somatra conservées dans ce navigateur&nbsp;:</p>
+        <p><strong>Charger la démo complète</strong> remplace les données actuelles par le jeu fictif Client A à Client F, soit 240 préparations et environ 60&nbsp;000 CHF sur août 2026.</p>
+        <p><strong>Tout réinitialiser</strong> vide uniquement les données fictives Somatra conservées dans ce navigateur&nbsp;:</p>
         <ul>
           <li>les clients et références ajoutés&nbsp;;</li>
           <li>les préparations et chronomètres ouverts&nbsp;;</li>
           <li>les temps enregistrés et toutes les modifications locales&nbsp;;</li>
           <li>le Suivi, les clients et les préparations ouvertes resteront vides après rechargement.</li>
         </ul>
-        <p><strong>Cette action est irréversible.</strong></p>
+        <p><strong>Les deux actions remplacent vos modifications locales et sont irréversibles.</strong></p>
       </div>
       <p id="reset-error" class="reset-error hidden" role="alert" aria-live="assertive" tabindex="-1"></p>
       <div class="reset-dialog-actions">
         <button id="cancel-reset" class="secondary" type="button">Annuler</button>
+        <button id="load-full-demo" class="primary" type="button">Charger la démo complète</button>
         <button id="confirm-reset" class="destructive" type="button">Tout réinitialiser</button>
       </div>
     </div>
