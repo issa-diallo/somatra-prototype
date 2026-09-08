@@ -330,8 +330,17 @@ function navigate(action) {
 
 function renderMobileNav(name) {
   const nav = $('#mobile-nav');
-  nav.innerHTML = '<button type="button" data-mobile-warehouse-tab="new"><span>＋</span>Nouvelle</button><button type="button" data-mobile-warehouse-tab="open"><span>◷</span>En cours</button><button type="button" data-mobile-warehouse-tab="tracking"><span>▤</span>Suivi</button><button type="button" data-reset-mobile><span>↻</span>Données</button>';
-  $$('[data-mobile-warehouse-tab]').forEach((button) => button.classList.toggle('active', name === 'warehouse' && button.dataset.mobileWarehouseTab === warehouseTab));
+  nav.innerHTML = `
+    <button type="button" data-mobile-warehouse-tab="new"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>Nouvelle</span></button>
+    <button type="button" data-mobile-warehouse-tab="open"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></span><span>En cours</span></button>
+    <button type="button" data-mobile-warehouse-tab="tracking"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 6h11M8 12h11M8 18h11"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg></span><span>Suivi</span></button>
+    <button type="button" data-reset-mobile><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8"/><path d="M4 4v4h4"/></svg></span><span>Données</span></button>`;
+  $$('[data-mobile-warehouse-tab]').forEach((button) => {
+    const active = name === 'warehouse' && button.dataset.mobileWarehouseTab === warehouseTab;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
 }
 
 function renderWarehouseTab() {

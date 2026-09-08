@@ -22,7 +22,7 @@
   <main id="app" tabindex="-1">
     <section id="view-warehouse" class="view" aria-labelledby="warehouse-title">
       <div class="page-heading">
-        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Préparations</h1><p><span id="warehouse-greeting">Magasinier démo</span> <span class="status-dot"></span> Poste actif</p></div>
+        <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Préparations</h1><p><span id="warehouse-greeting">Magasinier démo</span><span class="operator-status"><span class="status-dot"></span>Poste actif</span></p></div>
 
       </div>
 
@@ -38,7 +38,7 @@
           <label for="order-reference">Commande</label>
           <div class="order-entry">
             <input id="order-reference" class="field-input" type="text" autocomplete="off" placeholder="Ex. 4056489514374" maxlength="120" required aria-describedby="order-help order-reference-error" autofocus>
-            <button id="scan-order" class="secondary scan-button" type="button"><span aria-hidden="true">▣</span> Scanner</button>
+            <button id="scan-order" class="secondary scan-button" type="button"><span class="scan-button-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M8 12h8"/></svg></span> Scanner</button>
           </div>
           <p id="order-help" class="hint search-hint">Le scan est prioritaire ; la saisie manuelle reste toujours disponible.</p>
           <p id="order-reference-error" class="field-error task-field-error hidden" role="alert"></p>
