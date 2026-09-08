@@ -10,6 +10,7 @@ Prototype web statique, responsive et mobile-first destiné au magasinier pour s
 ## Fonctionnalités
 
 - Ouverture directe de l’espace **Magasinier**, sans choix de profil.
+- Présentation mobile de type application opérationnelle : en-tête compact, contrôles tactiles, CTA principal persistant et navigation basse compatible avec les safe areas.
 - Parcours **Nouvelle**, **En cours** et **Suivi**, plus gestion des données de démonstration.
 - Scan local ou saisie manuelle d’une référence libre de 120 caractères maximum.
 - Plusieurs chronomètres simultanés, indépendants et persistants entre les rechargements.
