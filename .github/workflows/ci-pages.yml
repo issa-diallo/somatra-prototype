@@ -30,7 +30,12 @@ jobs:
           node-version: 24
 
       - name: Vérifier la syntaxe JavaScript
-        run: node --check app.js
+        run: |
+          node --check app.js
+          node --check report-utils.js
+
+      - name: Exécuter les tests ciblés
+        run: node --test tests/*.test.js
 
       - name: Vérifier les fichiers attendus
         run: |
@@ -42,6 +47,7 @@ jobs:
               Path("index.html"),
               Path("styles.css"),
               Path("app.js"),
+              Path("report-utils.js"),
               Path("assets/somatra-logo.jpg"),
           ]
           missing = [str(path) for path in required if not path.is_file()]
@@ -67,7 +73,7 @@ jobs:
           if duplicates:
               raise SystemExit(f"Identifiants HTML dupliqués : {duplicates}")
           placeholder = "__SOMATRA_ASSET_VERSION__"
-          expected_assets = ("app.js", "styles.css", "assets/somatra-logo.jpg")
+          expected_assets = ("app.js", "report-utils.js", "styles.css", "assets/somatra-logo.jpg")
           missing_versions = [
               asset
               for asset in expected_assets
@@ -78,7 +84,7 @@ jobs:
                   "Version de cache absente des URL : " + ", ".join(missing_versions)
               )
           print(f"Structure HTML valide : {len(parser.ids)} identifiants uniques")
-          print("Version de cache présente sur app.js, styles.css et le logo")
+          print("Version de cache présente sur les scripts, styles.css et le logo")
           PY
 
       - name: Tester le service HTTP
@@ -98,7 +104,7 @@ jobs:
             cat /tmp/somatra-http.log
             exit 1
           fi
-          for path in /app.js /styles.css /assets/somatra-logo.jpg; do
+          for path in /app.js /report-utils.js /styles.css /assets/somatra-logo.jpg; do
             curl --fail --silent --show-error "http://127.0.0.1:8080${path}" >/dev/null
           done
 
@@ -122,7 +128,7 @@ jobs:
           DEPLOY_VERSION: ${{ github.sha }}
         run: |
           mkdir _site
-          cp index.html styles.css app.js .nojekyll _site/
+          cp index.html styles.css app.js report-utils.js .nojekyll _site/
           cp -R assets _site/
           python3 - <<'PY'
           import os

@@ -1,7 +1,6 @@
 'use strict';
 
 const DEMO_DATE = '2026-08-04';
-const RATE = 42;
 const STORAGE_KEY = 'somatra-demo-entries-v1';
 const CLIENTS_STORAGE_KEY = 'somatra-demo-clients-v1';
 const OPEN_TASKS_STORAGE_KEY = 'somatra-demo-open-preparations-v1';
@@ -24,8 +23,9 @@ const LEGACY_ENTRY_STATUS_TO_REVIEW = 'À contrôler';
 const ENTRY_STATUSES = [ENTRY_STATUS_TO_VALIDATE, ENTRY_STATUS_VALIDATED];
 const ACTIVITIES = ['Préparation de commande', 'Réception de marchandise', 'Rangement', 'Inventaire', 'Retour d’événement', 'Autre'];
 const MISSING_ACTIVITY_LABEL = 'Non renseignée';
+const MISSING_DEPARTMENT_LABEL = 'Non renseigné';
+const DEPARTMENT_MAX_LENGTH = 80;
 const TRACKING_BATCH_SIZE = 20;
-const INVOICE_FIELD_LIMITS = {name:120, street:160, postalCode:20, city:100, country:80};
 const seedOrders = {
   'Client A': ['CMD-2026-0142', 'CMD-2026-0151', 'CMD-A-0003', 'CMD-A-0004'],
   'Client B': ['CMD-2026-0147', 'CMD-2026-0155', 'CMD-B-0003', 'CMD-B-0004'],
@@ -33,14 +33,6 @@ const seedOrders = {
   'Client D': ['CMD-D-0001', 'CMD-D-0002', 'CMD-D-0003', 'CMD-D-0004'],
   'Client E': ['CMD-E-0001', 'CMD-E-0002', 'CMD-E-0003', 'CMD-E-0004'],
   'Client F': ['CMD-F-0001', 'CMD-F-0002', 'CMD-F-0003', 'CMD-F-0004']
-};
-const seedBillingProfiles = {
-  'Client A': {name:'Client A SA (fictif)', street:'Rue de la Démonstration 1', postalCode:'1000', city:'Ville exemple', country:'Suisse'},
-  'Client B': {name:'Client B SA (fictif)', street:'Avenue du Prototype 2', postalCode:'2000', city:'Ville exemple', country:'Suisse'},
-  'Client C': {name:'Client C SA (fictif)', street:'Chemin des Données 3', postalCode:'3000', city:'Ville exemple', country:'Suisse'},
-  'Client D': {name:'Client D SA (fictif)', street:'Route des Palettes 4', postalCode:'4000', city:'Ville exemple', country:'Suisse'},
-  'Client E': {name:'Client E SA (fictif)', street:'Quai des Expéditions 5', postalCode:'5000', city:'Ville exemple', country:'Suisse'},
-  'Client F': {name:'Client F SA (fictif)', street:'Allée des Entrepôts 6', postalCode:'6000', city:'Ville exemple', country:'Suisse'}
 };
 const SEED_PREPARATIONS_PER_CLIENT = 40;
 const seedMonthTargets = [
@@ -83,28 +75,19 @@ let orders = loadClients();
 let openTasks = loadOpenTasks();
 let referenceClientAssignments = new Map();
 reconcileReferenceClientAssignments();
-let currentView = 'login';
+let currentView = 'warehouse';
 let pendingTask = null;
-let detailClient = null;
 let toastTimer = null;
 let scanStream = null;
 let scanFrame = null;
 let scanSession = 0;
 let warehouseTab = 'new';
-let activeProfile = null;
 let editingEntryId = null;
 let trackingVisibleLimit = TRACKING_BATCH_SIZE;
-let trackingPdfUrl = null;
-let trackingPdfBlob = null;
-let trackingPdfFilename = '';
+let preparedReport = null;
+let preparedReportUrl = null;
 let resetDialogTrigger = null;
 let resetInProgress = false;
-let comparisonOpen = false;
-let invoiceDialogTrigger = null;
-let invoicePdfUrl = null;
-let invoicePdfBlob = null;
-let invoicePdfFilename = '';
-let pendingInvoiceEntries = [];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -158,7 +141,8 @@ function loadOpenTasks() {
         createdAt: Number.isFinite(task.createdAt) ? task.createdAt : Date.now(),
         accumulatedMs: Number.isFinite(task.accumulatedMs) && task.accumulatedMs >= 0 ? task.accumulatedMs : 0,
         lastStartedAt: Number.isFinite(task.lastStartedAt) ? task.lastStartedAt : null,
-        ...(Object.prototype.hasOwnProperty.call(task, 'activity') ? {activity:task.activity} : {})
+        ...(Object.prototype.hasOwnProperty.call(task, 'activity') ? {activity:task.activity} : {}),
+        ...(Object.prototype.hasOwnProperty.call(task, 'department') ? {department:task.department} : {})
       }));
   } catch (error) {
     return [];
@@ -184,6 +168,14 @@ function activityDisplayLabel(record) {
 
 function activityOptions(selectedActivity, emptyLabel = 'Sélectionner une activité') {
   return `<option value="">${escapeHtml(emptyLabel)}</option>${ACTIVITIES.map((activity) => `<option value="${escapeHtml(activity)}"${selectedActivity === activity ? ' selected' : ''}>${escapeHtml(activity)}</option>`).join('')}`;
+}
+
+function departmentDisplayLabel(record) {
+  return record && typeof record.department === 'string' && record.department.trim() ? record.department : MISSING_DEPARTMENT_LABEL;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
 }
 
 function referenceKey(value) {
@@ -316,56 +308,30 @@ function showView(name) {
   $$('.view').forEach((view) => view.classList.add('hidden'));
   $(`#view-${name}`).classList.remove('hidden');
   currentView = name;
-  const loggedIn = name !== 'login';
-  $('#switch-profile').classList.toggle('hidden', !loggedIn);
-  $('#mobile-nav').classList.toggle('hidden', !loggedIn || name === 'confirm');
+  $('#mobile-nav').classList.toggle('hidden', name === 'confirm');
   renderMobileNav(name);
   if (name === 'warehouse') {
     renderTracking();
     renderOpenTasks();
     renderWarehouseTab();
   }
-  if (name === 'billing') renderBilling();
   $('#app').scrollTop = 0;
   if (name === 'warehouse' && warehouseTab === 'new') $('#order-reference').focus({preventScroll:true});
   else $('#app').focus({preventScroll:true});
 }
 
 function navigate(action) {
-  if (action === 'profile-select') {
-    activeProfile = null;
-    showView('login');
-    return;
-  }
-  if (action === 'home') showView(currentView === 'login' ? 'login' : (currentView === 'warehouse' || currentView === 'confirm' ? 'warehouse' : 'billing'));
+  if (action === 'home') showView('warehouse');
   if (action === 'warehouse') {
-    if (activeProfile !== 'warehouse') return;
     warehouseTab = currentView === 'confirm' ? 'open' : 'new';
     showView('warehouse');
   }
-  if (action === 'billing' && activeProfile === 'billing') showView('billing');
-}
-
-function setProfile(profile) {
-  activeProfile = profile;
-  if (profile === 'warehouse') warehouseTab = 'new';
-  showView(profile === 'warehouse' ? 'warehouse' : 'billing');
-  toast(profile === 'warehouse' ? 'Profil magasinier activé' : 'Profil facturation activé');
 }
 
 function renderMobileNav(name) {
   const nav = $('#mobile-nav');
-  if (!activeProfile) {
-    nav.innerHTML = '';
-    return;
-  }
-  if (activeProfile === 'warehouse') {
-    nav.innerHTML = '<button type="button" data-mobile-warehouse-tab="new"><span>＋</span>Nouvelle</button><button type="button" data-mobile-warehouse-tab="open"><span>◷</span>En cours</button><button type="button" data-mobile-warehouse-tab="tracking"><span>▤</span>Suivi</button><button type="button" data-action="profile-select"><span>⇄</span>Profil</button>';
-    $$('[data-mobile-warehouse-tab]').forEach((button) => button.classList.toggle('active', name === 'warehouse' && button.dataset.mobileWarehouseTab === warehouseTab));
-  } else {
-    nav.innerHTML = '<button type="button" data-action="billing"><span>▥</span>Facturation</button><button type="button" data-action="profile-select"><span>⇄</span>Changer de profil</button>';
-    nav.querySelector('[data-action="billing"]').classList.toggle('active', name === 'billing' || name === 'detail');
-  }
+  nav.innerHTML = '<button type="button" data-mobile-warehouse-tab="new"><span>＋</span>Nouvelle</button><button type="button" data-mobile-warehouse-tab="open"><span>◷</span>En cours</button><button type="button" data-mobile-warehouse-tab="tracking"><span>▤</span>Suivi</button><button type="button" data-reset-mobile><span>↻</span>Données</button>';
+  $$('[data-mobile-warehouse-tab]').forEach((button) => button.classList.toggle('active', name === 'warehouse' && button.dataset.mobileWarehouseTab === warehouseTab));
 }
 
 function renderWarehouseTab() {
@@ -539,6 +505,7 @@ function pauseTaskAt(task, timestamp) {
 function resetTaskSelection() {
   $('#order-reference').value = '';
   $('#task-activity').value = '';
+  $('#task-department').value = '';
   clearTaskFieldError('task-activity', 'task-activity-error');
   updateTaskSelection();
 }
@@ -546,6 +513,7 @@ function resetTaskSelection() {
 function startTimer() {
   const order = normalizeUserInput($('#order-reference').value);
   const activity = $('#task-activity').value;
+  const department = normalizeUserInput($('#task-department').value);
   if (!order) {
     showTaskFieldError('order-reference', 'order-reference-error', 'Indiquez une référence de commande.');
     $('#order-reference').focus();
@@ -563,6 +531,12 @@ function startTimer() {
     return;
   }
   clearTaskFieldError('task-activity', 'task-activity-error');
+  if (department.length > DEPARTMENT_MAX_LENGTH) {
+    showTaskFieldError('task-department', 'task-department-error', `Le département ne peut pas dépasser ${DEPARTMENT_MAX_LENGTH} caractères.`);
+    $('#task-department').focus();
+    return;
+  }
+  clearTaskFieldError('task-department', 'task-department-error');
   const now = Date.now();
   const client = clientForReference(order);
   openTasks.push({
@@ -574,7 +548,8 @@ function startTimer() {
     createdAt: now,
     accumulatedMs: 0,
     lastStartedAt: now,
-    ...(activity ? {activity} : {})
+    ...(activity ? {activity} : {}),
+    ...(department ? {department} : {})
   });
   persistOpenTasks();
   resetTaskSelection();
@@ -618,6 +593,7 @@ function finishTask(taskId) {
   $('#confirm-operator').textContent = task.operator || LEGACY_OPERATOR;
   $('#duration-hours').value = Math.floor(roundedMinutes / 60);
   $('#duration-minutes').value = roundedMinutes % 60;
+  $('#confirm-department').value = task.department || '';
   $('#confirm-activity').innerHTML = activityOptions(isAllowedActivity(task.activity) ? task.activity : '');
   clearTaskFieldError('confirm-activity', 'confirm-activity-error');
   $('#comment').value = '';
@@ -639,7 +615,7 @@ function renderOpenTasks() {
   list.innerHTML = openTasks.length ? openTasks.map((task) => {
     const running = task.status === 'running';
     return `<article class="open-task${running ? ' is-running' : ''}">
-      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)} · ${escapeHtml(task.operator || LEGACY_OPERATOR)}</span><span class="open-task-activity">Activité : ${escapeHtml(activityDisplayLabel(task))}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
+      <div class="open-task-main"><div><strong>${escapeHtml(task.order)}</strong><span>${escapeHtml(task.client)} · ${escapeHtml(task.operator || LEGACY_OPERATOR)}</span><span class="open-task-activity">Département : ${escapeHtml(departmentDisplayLabel(task))} · Activité : ${escapeHtml(activityDisplayLabel(task))}</span></div><span class="task-status ${running ? 'running' : 'paused'}">${running ? 'En cours' : 'En pause'}</span></div>
       <dl><div><dt>Début</dt><dd>${escapeHtml(formatStartTime(task.createdAt))}</dd></div><div><dt>Durée cumulée</dt><dd class="open-task-duration" data-task-duration="${escapeHtml(task.id)}">${formatClock(taskElapsedMs(task, now))}</dd></div></dl>
       <div class="open-task-actions">${running
         ? `<button class="secondary" type="button" data-task-action="pause" data-task-id="${escapeHtml(task.id)}" aria-label="Mettre en pause la préparation ${escapeHtml(task.order)}">Pause</button>`
@@ -663,6 +639,7 @@ function saveEntry() {
   const minutesPart = Number.parseInt($('#duration-minutes').value, 10) || 0;
   const total = hours * 60 + minutesPart;
   const activity = $('#confirm-activity').value;
+  const department = normalizeUserInput($('#confirm-department').value);
   if (!pendingTask || hours < 0 || minutesPart < 0 || minutesPart > 59 || total <= 0) {
     $('#duration-error').classList.remove('hidden');
     return;
@@ -673,6 +650,12 @@ function saveEntry() {
     return;
   }
   clearTaskFieldError('confirm-activity', 'confirm-activity-error');
+  if (department.length > DEPARTMENT_MAX_LENGTH) {
+    showTaskFieldError('confirm-department', 'confirm-department-error', `Le département ne peut pas dépasser ${DEPARTMENT_MAX_LENGTH} caractères.`);
+    $('#confirm-department').focus();
+    return;
+  }
+  clearTaskFieldError('confirm-department', 'confirm-department-error');
   const comment = $('#comment').value.trim();
   if (comment.length > COMMENT_MAX_LENGTH) {
     showTaskFieldError('comment', 'comment-error', `Le commentaire ne peut pas dépasser ${COMMENT_MAX_LENGTH} caractères.`);
@@ -683,7 +666,7 @@ function saveEntry() {
   $('#duration-error').classList.add('hidden');
   entries.push({
     id: Date.now(), date: DEMO_DATE, client: pendingTask.client, order: pendingTask.order,
-    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, activity, comment, status: ENTRY_STATUS_TO_VALIDATE
+    minutes: total, operator: pendingTask.operator || LEGACY_OPERATOR, activity, ...(department ? {department} : {}), comment, status: ENTRY_STATUS_TO_VALIDATE
   });
   persistEntries();
   const taskId = pendingTask.id;
@@ -700,18 +683,6 @@ function formatDuration(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return hours ? `${hours} h ${String(mins).padStart(2, '0')}` : `${mins} min`;
-}
-
-function formatMoney(value) {
-  return value.toLocaleString('fr-CH', {style:'currency', currency:'CHF'});
-}
-
-function estimatedAmountForMinutes(minutes) {
-  return minutes / 60 * RATE;
-}
-
-function estimatedAmountForEntry(entry) {
-  return estimatedAmountForMinutes(entry.minutes);
 }
 
 function formatDate(date) {
@@ -789,6 +760,8 @@ function trackingEntryForm(entry) {
     <div class="tracking-edit-grid">
       <label>Client/commande<input name="client" type="text" value="${escapeHtml(entry.client)}" maxlength="${CLIENT_MAX_LENGTH}" autocomplete="off" required></label>
       <label>Référence<input name="order" type="text" value="${escapeHtml(entry.order)}" maxlength="${ORDER_REFERENCE_MAX_LENGTH}" autocomplete="off" required></label>
+      <label>Département <span class="optional">(facultatif)</span><input name="department" type="text" value="${escapeHtml(entry.department || '')}" maxlength="${DEPARTMENT_MAX_LENGTH}" autocomplete="off"></label>
+      <label>Opérateur<input name="operator" type="text" value="${escapeHtml(entry.operator || LEGACY_OPERATOR)}" maxlength="${OPERATOR_MAX_LENGTH}" autocomplete="off" required></label>
       <label>Date<input name="date" type="date" value="${escapeHtml(entry.date)}" required></label>
       <label>Activité<select name="activity" required>${activityOptions(isAllowedActivity(entry.activity) ? entry.activity : '')}</select></label>
       <fieldset><legend>Durée</legend><div class="tracking-duration-fields"><label>Heures<input name="hours" type="number" value="${escapeHtml(hours)}" min="0" max="${EDIT_DURATION_MAX_HOURS}" inputmode="numeric" required></label><label>Minutes<input name="minutes" type="number" value="${escapeHtml(minutes)}" min="0" max="59" inputmode="numeric" required></label></div></fieldset>
@@ -804,11 +777,11 @@ function trackingEntryCard(entry) {
     return `<article class="tracking-item is-editing">${trackingEntryForm(entry)}</article>`;
   }
   return `<article class="tracking-item tracking-row">
-    <button class="tracking-row-button" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation, client ${escapeHtml(entry.client)}, référence ${escapeHtml(entry.order)}, activité ${escapeHtml(activityDisplayLabel(entry))}, statut ${escapeHtml(entry.status)}, date ${escapeHtml(formatShortDate(entry.date))}, durée ${escapeHtml(formatDuration(entry.minutes))}">
+    <button class="tracking-row-button" type="button" data-entry-action="edit" data-entry-id="${escapeHtml(entry.id)}" aria-label="Modifier la préparation, client ${escapeHtml(entry.client)}, référence ${escapeHtml(entry.order)}, département ${escapeHtml(departmentDisplayLabel(entry))}, activité ${escapeHtml(activityDisplayLabel(entry))}, statut ${escapeHtml(entry.status)}, date ${escapeHtml(formatShortDate(entry.date))}, durée ${escapeHtml(formatDuration(entry.minutes))}">
       <span class="tracking-row-content">
         <span class="tracking-row-main"><strong>${escapeHtml(entry.client)}</strong><span class="status ${entry.status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></span>
         <span class="tracking-row-meta"><span class="tracking-row-reference">${escapeHtml(entry.order)}</span><span aria-hidden="true"> · </span><span>${escapeHtml(formatShortDate(entry.date))}</span><span aria-hidden="true"> · </span><span class="duration">${formatDuration(entry.minutes)}</span></span>
-        <span class="tracking-row-activity">Activité : ${escapeHtml(activityDisplayLabel(entry))}</span>
+        <span class="tracking-row-activity">Département : ${escapeHtml(departmentDisplayLabel(entry))} · Activité : ${escapeHtml(activityDisplayLabel(entry))}</span>
       </span>
       <span class="tracking-edit-indicator" aria-hidden="true">✎</span>
     </button>
@@ -847,6 +820,8 @@ function saveEditedEntry(form) {
 
   const client = normalizeUserInput(form.elements.client.value);
   const order = normalizeUserInput(form.elements.order.value);
+  const department = normalizeUserInput(form.elements.department.value);
+  const operator = normalizeUserInput(form.elements.operator.value);
   const date = form.elements.date.value;
   const hoursText = form.elements.hours.value.trim();
   const minutesText = form.elements.minutes.value.trim();
@@ -857,6 +832,9 @@ function saveEditedEntry(form) {
   else if (client.length > CLIENT_MAX_LENGTH) errors.push({name:'client', message:`Le client ou la commande ne peut pas dépasser ${CLIENT_MAX_LENGTH} caractères.`});
   if (!order) errors.push({name:'order', message:'Indiquez une référence.'});
   else if (order.length > ORDER_REFERENCE_MAX_LENGTH) errors.push({name:'order', message:`La référence ne peut pas dépasser ${ORDER_REFERENCE_MAX_LENGTH} caractères.`});
+  if (department.length > DEPARTMENT_MAX_LENGTH) errors.push({name:'department', message:`Le département ne peut pas dépasser ${DEPARTMENT_MAX_LENGTH} caractères.`});
+  if (!operator) errors.push({name:'operator', message:'Indiquez un opérateur.'});
+  else if (operator.length > OPERATOR_MAX_LENGTH) errors.push({name:'operator', message:`L’opérateur ne peut pas dépasser ${OPERATOR_MAX_LENGTH} caractères.`});
   if (!isValidIsoDate(date)) errors.push({name:'date', message:'Indiquez une date valide.'});
   if (!/^\d+$/.test(hoursText) || Number(hoursText) > EDIT_DURATION_MAX_HOURS) errors.push({name:'hours', message:`Les heures doivent être comprises entre 0 et ${EDIT_DURATION_MAX_HOURS}.`});
   if (!/^\d+$/.test(minutesText) || Number(minutesText) > 59) errors.push({name:'minutes', message:'Les minutes doivent être comprises entre 0 et 59.'});
@@ -871,7 +849,9 @@ function saveEditedEntry(form) {
 
   const newReferenceKey = referenceKey(order);
   const assignedClient = seedClientForReference(order) || client;
-  Object.assign(entry, {client:assignedClient, order, date, minutes:totalMinutes, activity, status});
+  Object.assign(entry, {client:assignedClient, order, operator, date, minutes:totalMinutes, activity, status});
+  if (department) entry.department = department;
+  else delete entry.department;
   [...entries, ...openTasks].forEach((record) => {
     if (record !== entry && referenceKey(record.order) === newReferenceKey) record.client = assignedClient;
   });
@@ -920,741 +900,101 @@ function renderTracking() {
   $('#tracking-load-more-info').textContent = filtered.length ? `${visible.length} affichée${visible.length > 1 ? 's' : ''} · ${remaining} restante${remaining > 1 ? 's' : ''}` : '';
 }
 
-function getFilteredEntries(clientOverride) {
-  const month = $('#month-filter').value;
-  const client = clientOverride || $('#client-filter').value;
-  const status = $('#status-filter').value;
-  return getBillingEntriesForPeriod(month, client, status);
-}
-
-function getBillingEntriesForPeriod(month, client = 'all', status = 'all') {
-  return entries.filter((entry) => entry.date.startsWith(month) && (client === 'all' || entry.client === client) && (status === 'all' || entry.status === status));
-}
-
-function shiftMonth(month, offset) {
-  const [year, monthNumber] = month.split('-').map(Number);
-  const shifted = new Date(Date.UTC(year, monthNumber - 1 + offset, 1));
-  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function comparisonMonth() {
-  const selectedMonth = $('#month-filter').value;
-  return $('#comparison-period').value === 'previous-year' ? shiftMonth(selectedMonth, -12) : shiftMonth(selectedMonth, -1);
-}
-
-function comparisonDelta(current, previous) {
-  if (previous === 0) return {label:current === 0 ? 'Stable' : 'Nouvelle activité', className:current === 0 ? '' : 'positive'};
-  const percentage = Math.round((current - previous) / previous * 100);
-  return {label:`${percentage > 0 ? '+' : ''}${percentage} %`, className:percentage > 0 ? 'positive' : percentage < 0 ? 'negative' : ''};
-}
-
-function comparisonMetricCard(label, current, previous, currentDisplay, previousDisplay, currentMonth, previousMonth) {
-  const maximum = Math.max(current, previous, 1);
-  const currentWidth = current / maximum * 100;
-  const previousWidth = previous / maximum * 100;
-  const delta = comparisonDelta(current, previous);
-  const ariaLabel = `${label}. ${monthLabel(currentMonth)} : ${currentDisplay}. ${monthLabel(previousMonth)} : ${previousDisplay}. Évolution : ${delta.label}.`;
-  return `<article class="comparison-metric" role="group" aria-label="${escapeHtml(ariaLabel)}">
-    <div class="comparison-metric-heading"><strong>${escapeHtml(label)}</strong><span class="comparison-delta ${delta.className}">${escapeHtml(delta.label)}</span></div>
-    <div class="comparison-bars" aria-hidden="true">
-      <div class="comparison-bar-row"><span class="comparison-bar-label">${escapeHtml(monthLabel(currentMonth))}</span><span class="comparison-bar-track"><span class="comparison-bar${current === 0 ? ' is-zero' : ''}" style="width:${currentWidth.toFixed(2)}%"></span></span><strong>${escapeHtml(currentDisplay)}</strong></div>
-      <div class="comparison-bar-row"><span class="comparison-bar-label">${escapeHtml(monthLabel(previousMonth))}</span><span class="comparison-bar-track"><span class="comparison-bar previous${previous === 0 ? ' is-zero' : ''}" style="width:${previousWidth.toFixed(2)}%"></span></span><strong>${escapeHtml(previousDisplay)}</strong></div>
-    </div>
-  </article>`;
-}
-
-function compactMoney(value) {
-  return `${new Intl.NumberFormat('fr-CH', {notation:'compact', maximumFractionDigits:1}).format(value)} CHF`;
-}
-
-function comparisonRevenueChart(currentAmount, previousAmount, currentMonth, previousMonth) {
-  const maximum = Math.max(currentAmount, previousAmount, 1);
-  const currentHeight = currentAmount ? Math.max(4, currentAmount / maximum * 100) : 0;
-  const previousHeight = previousAmount ? Math.max(4, previousAmount / maximum * 100) : 0;
-  const delta = comparisonDelta(currentAmount, previousAmount);
-  const difference = currentAmount - previousAmount;
-  const differenceLabel = `${difference >= 0 ? '+' : '−'}${formatMoney(Math.abs(difference))}`;
-  const ariaLabel = `Chiffre d’affaires estimé. ${monthLabel(previousMonth)} : ${formatMoney(previousAmount)}. ${monthLabel(currentMonth)} : ${formatMoney(currentAmount)}. Écart : ${differenceLabel}, soit ${delta.label}.`;
-  return `<div class="revenue-total-plot" role="img" aria-label="${escapeHtml(ariaLabel)}">
-    <div class="revenue-total-bars" aria-hidden="true">
-      <div class="revenue-total-column previous"><strong>${escapeHtml(compactMoney(previousAmount))}</strong><span style="height:${previousHeight.toFixed(2)}%"></span><b>${escapeHtml(monthLabel(previousMonth))}</b></div>
-      <div class="revenue-total-column current"><strong>${escapeHtml(compactMoney(currentAmount))}</strong><span style="height:${currentHeight.toFixed(2)}%"></span><b>${escapeHtml(monthLabel(currentMonth))}</b></div>
-    </div>
-    <div class="revenue-total-delta"><span>Écart de chiffre d’affaires estimé</span><strong>${escapeHtml(differenceLabel)}</strong><b class="${delta.className}">${escapeHtml(delta.label)}</b></div>
-  </div>`;
-}
-
-function renderComparison() {
-  const content = $('#comparison-content');
-  const toggle = $('#comparison-toggle');
-  content.classList.toggle('hidden', !comparisonOpen);
-  toggle.setAttribute('aria-expanded', String(comparisonOpen));
-  toggle.textContent = comparisonOpen ? 'Masquer le comparatif' : 'Afficher le comparatif';
-  if (!comparisonOpen) return;
-
-  const currentMonth = $('#month-filter').value;
-  const previousMonth = comparisonMonth();
-  const client = $('#client-filter').value;
-  const status = $('#status-filter').value;
-  const currentEntries = getBillingEntriesForPeriod(currentMonth, client, status);
-  const previousEntries = getBillingEntriesForPeriod(previousMonth, client, status);
-  const currentMinutes = currentEntries.reduce((sum, entry) => sum + entry.minutes, 0);
-  const previousMinutes = previousEntries.reduce((sum, entry) => sum + entry.minutes, 0);
-  const currentAmount = estimatedAmountForMinutes(currentMinutes);
-  const previousAmount = estimatedAmountForMinutes(previousMinutes);
-  const scope = [client === 'all' ? 'tous les clients' : client, status === 'all' ? 'tous les statuts' : `statut ${status}`].join(' · ');
-  $('#comparison-summary').textContent = `${monthLabel(currentMonth)} comparé à ${monthLabel(previousMonth)} · ${scope}.`;
-  $('#comparison-chart').innerHTML = [
-    comparisonMetricCard('Préparations', currentEntries.length, previousEntries.length, String(currentEntries.length), String(previousEntries.length), currentMonth, previousMonth),
-    comparisonMetricCard('Temps total', currentMinutes, previousMinutes, formatDuration(currentMinutes), formatDuration(previousMinutes), currentMonth, previousMonth),
-    comparisonMetricCard('Montant estimé*', currentAmount, previousAmount, formatMoney(currentAmount), formatMoney(previousAmount), currentMonth, previousMonth)
-  ].join('');
-  $('#comparison-revenue-chart').innerHTML = comparisonRevenueChart(currentAmount, previousAmount, currentMonth, previousMonth);
-}
-
-function groupByClient(filtered) {
-  return filtered.reduce((groups, entry) => {
-    if (!groups[entry.client]) groups[entry.client] = {client:entry.client, count:0, minutes:0, hasToValidate:false, allValidated:true};
-    groups[entry.client].count += 1;
-    groups[entry.client].minutes += entry.minutes;
-    groups[entry.client].hasToValidate ||= entry.status === ENTRY_STATUS_TO_VALIDATE;
-    groups[entry.client].allValidated &&= entry.status === ENTRY_STATUS_VALIDATED;
-    return groups;
-  }, {});
-}
-
-function billingGroupStatus(group) {
-  if (group.hasToValidate) return ENTRY_STATUS_TO_VALIDATE;
-  if (group.allValidated) return ENTRY_STATUS_VALIDATED;
-  return 'Statut à corriger';
-}
-
-function updateBillingClientFilter() {
-  const filter = $('#client-filter');
-  const current = filter.value || 'all';
-  const clients = [...new Set([...Object.keys(orders), ...entries.map((entry) => entry.client)])].sort((a, b) => a.localeCompare(b, 'fr'));
-  filter.innerHTML = '<option value="all">Tous les clients</option>' + clients.map((client) => `<option>${escapeHtml(client)}</option>`).join('');
-  filter.value = clients.includes(current) ? current : 'all';
-}
-
-function renderBilling() {
-  updateBillingClientFilter();
-  const filtered = getFilteredEntries();
-  const groups = Object.values(groupByClient(filtered)).sort((a,b) => a.client.localeCompare(b.client));
-  const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
-  const reviewCount = filtered.filter((entry) => entry.status === ENTRY_STATUS_TO_VALIDATE).length;
-  $('#kpi-grid').innerHTML = [
-    ['Clients', groups.length, ''], ['Préparations', filtered.length, ''], ['Temps total', formatDuration(minutes), 'orange'], ['Montant estimé*', formatMoney(estimatedAmountForMinutes(minutes)), 'green']
-  ].map(([label,value,color]) => `<div class="kpi ${color}"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#result-count').textContent = `${groups.length} client${groups.length > 1 ? 's' : ''} · ${reviewCount} saisie${reviewCount > 1 ? 's' : ''} à valider`;
-  $('#billing-rows').innerHTML = groups.length ? groups.map((group) => {
-    const status = billingGroupStatus(group);
-    const statusClass = status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review';
-    return `<tr><td><strong>${escapeHtml(group.client)}</strong></td><td>${group.count}</td><td class="duration">${formatDuration(group.minutes)}</td><td>${formatMoney(estimatedAmountForMinutes(group.minutes))}</td><td><span class="status ${statusClass}">${escapeHtml(status)}</span></td><td><button class="detail-button" type="button" data-client="${escapeHtml(group.client)}">Voir le détail →</button></td></tr>`;
-  }).join('') : '<tr><td class="empty" colspan="6">Aucune saisie ne correspond aux filtres.</td></tr>';
-  $$('.detail-button').forEach((button) => button.addEventListener('click', () => showDetail(button.dataset.client)));
-  renderComparison();
-}
-
 function monthLabel(value) {
   const [year, month] = value.split('-').map(Number);
   const text = new Intl.DateTimeFormat('fr-FR', {month:'long', year:'numeric'}).format(new Date(year, month - 1, 1));
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function showDetail(client) {
-  detailClient = client;
-  showInvoiceGenerationError('');
-  const filtered = getFilteredEntries(client);
-  const minutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
-  $('#detail-title').textContent = client;
-  $('#detail-month').textContent = monthLabel($('#month-filter').value);
-  $('#detail-kpis').innerHTML = [['Préparations',filtered.length],['Temps total',formatDuration(minutes)],['Montant estimé*',formatMoney(estimatedAmountForMinutes(minutes))]].map(([label,value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
-  $('#detail-rows').innerHTML = filtered.length ? filtered.map((entry) => `<tr><td>${formatDate(entry.date)}</td><td><strong>${escapeHtml(entry.order)}</strong></td><td>${escapeHtml(entry.operator)}</td><td class="duration">${formatDuration(entry.minutes)}</td><td>${escapeHtml(activityDisplayLabel(entry))}</td><td>${escapeHtml(entry.comment || '—')}</td><td><span class="status ${entry.status === ENTRY_STATUS_VALIDATED ? 'valid' : 'review'}">${escapeHtml(entry.status)}</span></td><td>${formatMoney(estimatedAmountForEntry(entry))}</td></tr>`).join('') : '<tr><td class="empty" colspan="8">Aucune préparation.</td></tr>';
-  showView('detail');
+function clearPreparedReport() {
+  if (preparedReportUrl) URL.revokeObjectURL(preparedReportUrl);
+  preparedReportUrl = null;
+  preparedReport = null;
+  $('#report-preview').removeAttribute('data');
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
-}
-
-function csvEscape(value) {
-  const text = String(value ?? '');
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function exportCsv(client) {
-  const filtered = getFilteredEntries(client);
-  const lines = [
-    ['Date','Client','Commande','Opérateur','Durée (minutes)','Durée affichée','Activité','Commentaire','Statut','Montant estimé CHF (tarif fictif)'],
-    ...filtered.map((entry) => [entry.date,entry.client,entry.order,entry.operator,entry.minutes,formatDuration(entry.minutes),activityDisplayLabel(entry),entry.comment,entry.status,estimatedAmountForEntry(entry).toFixed(2).replace('.', ',')])
-  ];
-  const csv = '\uFEFF' + lines.map((line) => line.map(csvEscape).join(';')).join('\r\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  const suffix = client && client !== 'all' ? `-${client.toLowerCase().replace(/\s/g, '-')}` : '';
-  anchor.href = url;
-  anchor.download = `somatra-temps-${$('#month-filter').value}${suffix}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-  toast(`${filtered.length} ligne${filtered.length > 1 ? 's' : ''} exportée${filtered.length > 1 ? 's' : ''} en CSV`);
-}
-
-function sanitizePdfText(value) {
-  return String(value ?? '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function containsFinancialIndicator(value) {
-  const text = sanitizePdfText(value);
-  return /[€$£]|\b(?:chf|francs?|prix|tarifs?|montants?|factures?|facturations?|co[uû]ts?|valeurs?)\b/iu.test(text);
-}
-
-function truncatePdfText(value, maximumLength) {
-  const characters = [...sanitizePdfText(value)];
-  if (characters.length <= maximumLength) return characters.join('');
-  return `${characters.slice(0, maximumLength - 1).join('')}…`;
-}
-
-function safePdfFreeText(value, maximumLength) {
-  if (containsFinancialIndicator(value)) return 'Information retiree';
-  return truncatePdfText(value, maximumLength);
-}
-
-function safePdfActivity(entry) {
-  const label = activityDisplayLabel(entry);
-  return isAllowedActivity(entry?.activity) ? truncatePdfText(label, 80) : safePdfFreeText(label, 80);
-}
-
-function wrapPdfText(value, maximumLength = 88) {
-  const words = sanitizePdfText(value).split(' ');
-  const lines = [];
-  let line = '';
-  words.forEach((word) => {
-    const chunks = word.match(new RegExp(`.{1,${maximumLength}}`, 'g')) || [''];
-    chunks.forEach((chunk) => {
-      if (line && line.length + chunk.length + 1 > maximumLength) {
-        lines.push(line);
-        line = '';
-      }
-      line += `${line ? ' ' : ''}${chunk}`;
-    });
-  });
-  if (line || !lines.length) lines.push(line);
-  return lines;
-}
-
-function pdfByteArray(value) {
-  const windows1252 = new Map([
-    [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84], [0x2026, 0x85],
-    [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88], [0x2030, 0x89], [0x0160, 0x8a],
-    [0x2039, 0x8b], [0x0152, 0x8c], [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92],
-    [0x201c, 0x93], [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
-    [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b], [0x0153, 0x9c],
-    [0x017e, 0x9e], [0x0178, 0x9f]
-  ]);
-  return Uint8Array.from([...value].map((character) => {
-    const codePoint = character.codePointAt(0);
-    if (windows1252.has(codePoint)) return windows1252.get(codePoint);
-    return codePoint <= 0xff ? codePoint : 0x3f;
-  }));
-}
-
-function escapePdfString(value) {
-  return sanitizePdfText(value).replace(/([\\()])/g, '\\$1');
-}
-
-function trackingPdfHeaderLines(filtered, month, continuation = false) {
-  if (continuation) {
-    return wrapPdfText(`Somatra - Releve mensuel - ${monthLabel(month)} (suite)`, 86)
-      .map((text) => ({text, size:13, bold:true, gap:17}));
-  }
-  const clientFilter = $('#tracking-client-filter').value;
-  const orderFilter = $('#tracking-order-filter').value;
-  const safeClientFilter = clientFilter === 'all' ? 'Tous' : safePdfFreeText(clientFilter, CLIENT_MAX_LENGTH);
-  const safeOrderFilter = orderFilter === 'all' ? 'Toutes' : safePdfFreeText(orderFilter, ORDER_REFERENCE_MAX_LENGTH);
-  const totalMinutes = filtered.reduce((sum, entry) => sum + entry.minutes, 0);
-  const uniqueClientCount = new Set(filtered.map((entry) => entry.client)).size;
-  return [
-    {text:'Somatra - Releve mensuel des preparations', size:17, bold:true, gap:24},
-    {text:`Mois : ${monthLabel(month)}`, size:12, bold:true, gap:18},
-    ...wrapPdfText(`Filtres actifs - Client/commande : ${safeClientFilter}`, 86)
-      .map((text) => ({text, size:9, gap:13})),
-    ...wrapPdfText(`Preparation : ${safeOrderFilter}`, 86)
-      .map((text) => ({text, size:9, gap:13})),
-    ...wrapPdfText(`Resume : ${filtered.length} preparation${filtered.length > 1 ? 's' : ''} - ${uniqueClientCount} client${uniqueClientCount > 1 ? 's' : ''} - ${formatDuration(totalMinutes)}`, 86)
-      .map((text) => ({text, size:11, bold:true, gap:15})),
-    {text:'Demonstration - donnees fictives - releve non financier', size:9, gap:22}
-  ];
-}
-
-function trackingPdfEntryLines(entry) {
-  const lines = [];
-  const client = safePdfFreeText(entry.client, CLIENT_MAX_LENGTH);
-  const order = safePdfFreeText(entry.order, ORDER_REFERENCE_MAX_LENGTH);
-  const operator = safePdfFreeText(entry.operator, OPERATOR_MAX_LENGTH);
-  const activity = safePdfActivity(entry);
-  const comment = safePdfFreeText(entry.comment, COMMENT_MAX_LENGTH);
-  wrapPdfText(`${formatShortDate(entry.date)} - ${client}`, 86)
-    .forEach((text, index) => lines.push({text, size:10, bold:index === 0, gap:12}));
-  wrapPdfText(`Reference : ${order} - Duree : ${formatDuration(entry.minutes)} - Statut : ${entry.status}`, 86)
-    .forEach((text) => lines.push({text, size:9, gap:11}));
-  if (operator) {
-    wrapPdfText(`Operateur : ${operator}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
-  }
-  wrapPdfText(`Activite : ${activity}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
-  if (comment) {
-    wrapPdfText(`Commentaire : ${comment}`, 86).forEach((text) => lines.push({text, size:9, gap:11}));
-  }
-  lines.push({text:'', size:5, gap:7});
-  return lines;
-}
-
-function createPdfBlob(filtered, month) {
-  const pageTop = 800;
-  const pageBottom = 48;
-  const pages = [trackingPdfHeaderLines(filtered, month)];
-  let y = pageTop - pages[0].reduce((height, line) => height + line.gap, 0);
-  filtered.forEach((entry) => {
-    const entryLines = trackingPdfEntryLines(entry);
-    const entryHeight = entryLines.reduce((height, line) => height + line.gap, 0);
-    if (y - entryHeight < pageBottom) {
-      pages.push(trackingPdfHeaderLines(filtered, month, true));
-      y = pageTop - pages.at(-1).reduce((height, line) => height + line.gap, 0);
-    }
-    pages.at(-1).push(...entryLines);
-    y -= entryHeight;
-  });
-
-  return createPdfDocument(pages);
-}
-
-function createPdfDocument(pages) {
-  const pageCommands = pages.map((lines) => {
-    let y = 800;
-    return lines.map((line) => {
-      const command = `BT /${line.bold ? 'F2' : 'F1'} ${line.size} Tf 48 ${y} Td (${escapePdfString(line.text)}) Tj ET`;
-      y -= line.gap;
-      return command;
-    }).join('\n');
-  });
-  return createPdfCommandDocument(pageCommands);
-}
-
-function createPdfCommandDocument(pageCommands) {
-  const objects = new Map();
-  const pageReferences = pageCommands.map((_, index) => 6 + index * 2);
-  objects.set(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  objects.set(2, `<< /Type /Pages /Kids [${pageReferences.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageCommands.length} >>`);
-  objects.set(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  objects.set(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
-  pageCommands.forEach((commands, index) => {
-    const contentId = 5 + index * 2;
-    const pageId = contentId + 1;
-    objects.set(contentId, `<< /Length ${pdfByteArray(commands).length} >>\nstream\n${commands}\nendstream`);
-    objects.set(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);
-  });
-
-  const chunks = [pdfByteArray('%PDF-1.4\n%âãÏÓ\n')];
-  const offsets = [0];
-  let byteLength = chunks[0].length;
-  const objectCount = 4 + pageCommands.length * 2;
-  for (let id = 1; id <= objectCount; id += 1) {
-    offsets[id] = byteLength;
-    const chunk = pdfByteArray(`${id} 0 obj\n${objects.get(id)}\nendobj\n`);
-    chunks.push(chunk);
-    byteLength += chunk.length;
-  }
-  const xrefOffset = byteLength;
-  const xref = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  chunks.push(pdfByteArray(xref));
-  return new Blob(chunks, {type:'application/pdf'});
-}
-
-function showInvoiceGenerationError(message) {
-  const output = $('#invoice-generation-error');
+function showTrackingReportError(message) {
+  const output = $('#tracking-report-error');
   output.textContent = message;
   output.classList.toggle('hidden', !message);
 }
 
-function invoiceEntriesForDetail() {
-  const month = $('#month-filter').value;
-  return entries
-    .filter((entry) => entry.date.startsWith(month) && entry.client === detailClient)
-    .slice()
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+function reportEntries() {
+  const month = $('#tracking-month-filter').value;
+  const order = $('#tracking-order-filter').value;
+  const client = $('#tracking-client-filter').value;
+  return entries.filter((entry) => entry.date.startsWith(month) && (order === 'all' || entry.order === order) && (client === 'all' || entry.client === client));
 }
 
-function seedBillingProfileForEntries(client, invoiceEntries) {
-  const knownOrders = seedOrders[client];
-  if (!knownOrders || !seedBillingProfiles[client] || !invoiceEntries.length) return null;
-  const allReferencesKnown = invoiceEntries.every((entry) => knownOrders.some((order) => referenceKey(order) === referenceKey(entry.order)));
-  return allReferencesKnown ? {...seedBillingProfiles[client]} : null;
-}
-
-function invoiceSlug(value) {
-  const slug = normalizeUserInput(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 48);
-  return slug || 'client';
-}
-
-function invoiceReference(month, client) {
-  return `DEMO-${month.replace('-', '')}-${invoiceSlug(client).toUpperCase()}`;
-}
-
-function pdfColor(color) {
-  return color.map((value) => (value / 255).toFixed(3)).join(' ');
-}
-
-function pdfTextCommand(text, x, y, size, {bold = false, color = [23, 43, 58]} = {}) {
-  return `${pdfColor(color)} rg BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${escapePdfString(text)}) Tj ET`;
-}
-
-function pdfTextRightCommand(text, rightX, y, size, options = {}) {
-  const width = sanitizePdfText(text).length * size * (options.bold ? 0.56 : 0.5);
-  return pdfTextCommand(text, Math.max(32, rightX - width), y, size, options);
-}
-
-function pdfRectCommand(x, y, width, height, fill, stroke = null) {
-  const fillCommand = `${pdfColor(fill)} rg`;
-  const strokeCommand = stroke ? ` ${pdfColor(stroke)} RG 1 w` : '';
-  return `q ${fillCommand}${strokeCommand} ${x} ${y} ${width} ${height} re ${stroke ? 'B' : 'f'} Q`;
-}
-
-function invoiceAddressCommands(x, y, title, name, addressLines) {
-  const navy = [16, 42, 67];
-  const muted = [102, 120, 133];
-  const commands = [
-    pdfRectCommand(x, y, 245, 108, [247, 249, 250], [215, 224, 230]),
-    pdfRectCommand(x, y, 5, 108, [244, 123, 32]),
-    pdfTextCommand(title, x + 18, y + 85, 8, {bold:true, color:[214, 95, 11]})
-  ];
-  let cursor = y + 64;
-  wrapPdfText(truncatePdfText(name, 72), 37).slice(0, 2).forEach((line) => {
-    commands.push(pdfTextCommand(line, x + 18, cursor, 10, {bold:true, color:navy}));
-    cursor -= 13;
-  });
-  addressLines.slice(0, 3).forEach((line) => {
-    commands.push(pdfTextCommand(truncatePdfText(line, 48), x + 18, cursor - 2, 8, {color:muted}));
-    cursor -= 11;
-  });
-  return commands;
-}
-
-function invoiceMetricCommands(x, label, value) {
-  return [
-    pdfRectCommand(x, 482, 161, 62, [255, 255, 255], [215, 224, 230]),
-    pdfTextCommand(label, x + 14, 523, 7, {bold:true, color:[102, 120, 133]}),
-    pdfTextCommand(value, x + 14, 497, 14, {bold:true, color:[16, 42, 67]})
-  ];
-}
-
-function invoiceCoverCommands(profile, invoiceEntries, month) {
-  const navy = [16, 42, 67];
-  const orange = [244, 123, 32];
-  const ink = [23, 43, 58];
-  const muted = [102, 120, 133];
-  const totalMinutes = invoiceEntries.reduce((sum, entry) => sum + entry.minutes, 0);
-  const totalAmount = formatMoney(estimatedAmountForMinutes(totalMinutes));
-  const reference = invoiceReference(month, detailClient);
-  const generatedOn = new Intl.DateTimeFormat('fr-FR', {day:'2-digit', month:'long', year:'numeric'}).format(new Date());
-  const clientAddress = [
-    normalizeUserInput(profile.name) !== normalizeUserInput(detailClient) ? `Raison sociale : ${truncatePdfText(profile.name, INVOICE_FIELD_LIMITS.name)}` : '',
-    truncatePdfText(profile.street, INVOICE_FIELD_LIMITS.street),
-    `${truncatePdfText(profile.postalCode, INVOICE_FIELD_LIMITS.postalCode)} ${truncatePdfText(profile.city, INVOICE_FIELD_LIMITS.city)} · ${truncatePdfText(profile.country, INVOICE_FIELD_LIMITS.country)}`
-  ].filter(Boolean);
-  const commands = [
-    pdfRectCommand(0, 708, 595, 134, navy),
-    pdfRectCommand(0, 708, 595, 6, orange),
-    pdfTextCommand('SOMATRA', 42, 799, 24, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('LOGISTIQUE INTERNATIONALE · DEPUIS 1959', 43, 780, 7, {bold:true, color:[190, 207, 218]}),
-    pdfRectCommand(424, 792, 129, 25, orange),
-    pdfTextCommand('DOCUMENT FICTIF', 440, 800, 8, {bold:true, color:navy}),
-    pdfTextCommand('FACTURE DE DÉMONSTRATION', 42, 738, 18, {bold:true, color:[255, 255, 255]}),
-    pdfTextRightCommand(reference, 553, 750, 8, {bold:true, color:[255, 255, 255]}),
-    pdfTextRightCommand(`Générée le ${generatedOn}`, 553, 733, 8, {color:[190, 207, 218]}),
-    ...invoiceAddressCommands(42, 573, 'ÉMETTEUR FICTIF', 'Somatra · Prototype premium', ['Rue de la Logistique 1', '1000 Ville exemple', 'Suisse']),
-    ...invoiceAddressCommands(308, 573, 'DESTINATAIRE FICTIF · CLIENT APP', detailClient, clientAddress),
-    ...invoiceMetricCommands(42, 'PÉRIODE', monthLabel(month)),
-    ...invoiceMetricCommands(217, 'PRÉPARATIONS', String(invoiceEntries.length)),
-    ...invoiceMetricCommands(392, 'TEMPS TOTAL', formatDuration(totalMinutes)),
-    pdfTextCommand('PRESTATION', 42, 449, 9, {bold:true, color:navy}),
-    pdfRectCommand(42, 407, 511, 30, navy),
-    pdfTextCommand('DESCRIPTION', 54, 418, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('TEMPS APP', 330, 418, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('TARIF FICTIF', 405, 418, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('MONTANT', 493, 418, 7, {bold:true, color:[255, 255, 255]}),
-    pdfRectCommand(42, 346, 511, 61, [247, 249, 250], [215, 224, 230]),
-    pdfTextCommand('Prestations logistiques mensuelles', 54, 381, 10, {bold:true, color:ink}),
-    pdfTextCommand(`Consolidation des temps · ${monthLabel(month)}`, 54, 363, 8, {color:muted}),
-    pdfTextCommand(formatDuration(totalMinutes), 330, 374, 9, {bold:true, color:ink}),
-    pdfTextCommand(`${formatMoney(RATE)} / h`, 405, 374, 8, {color:ink}),
-    pdfTextRightCommand(totalAmount, 541, 374, 10, {bold:true, color:ink}),
-    pdfTextCommand(`Source application : ${totalMinutes} min × ${formatMoney(RATE)} / 60`, 54, 351, 7, {color:muted}),
-    pdfRectCommand(342, 252, 211, 73, navy),
-    pdfRectCommand(342, 252, 7, 73, orange),
-    pdfTextCommand('TOTAL ESTIMÉ', 363, 299, 8, {bold:true, color:[190, 207, 218]}),
-    pdfTextRightCommand(totalAmount, 535, 270, 20, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('TVA non calculée · aucune demande de paiement', 42, 224, 8, {bold:true, color:[184, 58, 58]}),
-    pdfTextCommand('Cette maquette premium illustre un futur parcours client. Elle ne constitue pas une facture réelle.', 42, 207, 8, {color:muted}),
-    pdfRectCommand(42, 101, 511, 76, [255, 244, 235], [244, 123, 32]),
-    pdfTextCommand('ANNEXE DE TRAÇABILITÉ', 60, 151, 9, {bold:true, color:[214, 95, 11]}),
-    pdfTextCommand(`${invoiceEntries.length} préparation${invoiceEntries.length > 1 ? 's' : ''} détaillée${invoiceEntries.length > 1 ? 's' : ''} sur les pages suivantes`, 60, 129, 12, {bold:true, color:navy}),
-    pdfTextCommand('Dates, références, activités, durées, opérateurs et commentaires.', 60, 113, 8, {color:muted})
-  ];
-  return commands;
-}
-
-function invoiceAnnexPageCommands(reference, month, pageEntries, pageIndex) {
-  const navy = [16, 42, 67];
-  const orange = [244, 123, 32];
-  const muted = [102, 120, 133];
-  const commands = [
-    pdfRectCommand(0, 775, 595, 67, navy),
-    pdfRectCommand(0, 775, 595, 5, orange),
-    pdfTextCommand('SOMATRA', 42, 810, 15, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('ANNEXE DE TRAÇABILITÉ · DOCUMENT FICTIF', 42, 791, 8, {bold:true, color:[190, 207, 218]}),
-    pdfTextRightCommand(reference, 553, 802, 8, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand(`Détail des préparations · ${monthLabel(month)}`, 42, 742, 16, {bold:true, color:navy}),
-    pdfTextCommand('Chaque ligne reprend les données affichées dans le détail client de l’application.', 42, 722, 8, {color:muted}),
-    pdfRectCommand(42, 678, 511, 28, navy),
-    pdfTextCommand('DATE', 52, 688, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('RÉFÉRENCE / DÉTAIL', 103, 688, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('ACTIVITÉ', 281, 688, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('DURÉE', 414, 688, 7, {bold:true, color:[255, 255, 255]}),
-    pdfTextCommand('MONTANT*', 483, 688, 7, {bold:true, color:[255, 255, 255]})
-  ];
-  let cursor = 678;
-  pageEntries.forEach((entry, index) => {
-    const rowBottom = cursor - 56;
-    const activity = truncatePdfText(activityDisplayLabel(entry), 25);
-    const order = truncatePdfText(entry.order, 30);
-    const operator = truncatePdfText(entry.operator, 24);
-    const comment = truncatePdfText(entry.comment || 'Sans commentaire', 48);
-    commands.push(pdfRectCommand(42, rowBottom, 511, 56, index % 2 ? [247, 249, 250] : [255, 255, 255], [229, 235, 239]));
-    commands.push(pdfTextCommand(formatShortDate(entry.date), 52, cursor - 23, 8, {bold:true, color:navy}));
-    commands.push(pdfTextCommand(order, 103, cursor - 20, 9, {bold:true, color:navy}));
-    commands.push(pdfTextCommand(`${operator} · ${entry.status} · ${comment}`, 103, cursor - 39, 7, {color:muted}));
-    commands.push(pdfTextCommand(activity, 281, cursor - 23, 8, {color:navy}));
-    commands.push(pdfTextRightCommand(formatDuration(entry.minutes), 462, cursor - 23, 8, {bold:true, color:navy}));
-    commands.push(pdfTextRightCommand(formatMoney(estimatedAmountForEntry(entry)), 541, cursor - 23, 8, {bold:true, color:navy}));
-    cursor -= 56;
-  });
-  commands.push(pdfTextCommand(`Annexe ${pageIndex} · * Tarif fictif : ${formatMoney(RATE)} / h`, 42, 38, 7, {color:muted}));
-  return commands;
-}
-
-function createInvoicePdfBlob(profile, invoiceEntries, month) {
-  const reference = invoiceReference(month, detailClient);
-  const pageCommands = [invoiceCoverCommands(profile, invoiceEntries, month).join('\n')];
-  const entriesPerPage = 10;
-  for (let index = 0; index < invoiceEntries.length; index += entriesPerPage) {
-    const pageEntries = invoiceEntries.slice(index, index + entriesPerPage);
-    pageCommands.push(invoiceAnnexPageCommands(reference, month, pageEntries, pageCommands.length).join('\n'));
-  }
-  const totalPages = pageCommands.length;
-  pageCommands.forEach((commands, index) => {
-    pageCommands[index] = `${commands}\n${pdfTextRightCommand(`Page ${index + 1} / ${totalPages}`, 553, 38, 7, {color:[102, 120, 133]})}`;
-  });
-  return createPdfCommandDocument(pageCommands);
-}
-
-function clearInvoicePdf() {
-  if (invoicePdfUrl) URL.revokeObjectURL(invoicePdfUrl);
-  invoicePdfUrl = null;
-  invoicePdfBlob = null;
-  invoicePdfFilename = '';
-  $('#invoice-preview').removeAttribute('data');
-}
-
-function resetInvoiceForm() {
-  const form = $('#invoice-client-form');
-  form.reset();
-  form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute('aria-invalid'));
-  $('#invoice-form-error').textContent = '';
-  $('#invoice-form-error').classList.add('hidden');
-}
-
-function closeInvoiceDialog() {
-  const dialog = $('#invoice-dialog');
-  if (dialog.open) dialog.close();
-}
-
-function displayInvoicePreview(profile) {
-  try {
-    clearInvoicePdf();
-    const month = $('#month-filter').value;
-    invoicePdfBlob = createInvoicePdfBlob(profile, pendingInvoiceEntries, month);
-    invoicePdfUrl = URL.createObjectURL(invoicePdfBlob);
-    invoicePdfFilename = `somatra-facture-fictive-${month}-${invoiceSlug(detailClient)}.pdf`;
-    $('#invoice-preview').data = invoicePdfUrl;
-    $('#invoice-client-form').classList.add('hidden');
-    $('#invoice-preview-panel').classList.remove('hidden');
-    $('#invoice-dialog-title').textContent = 'Aperçu de la facture fictive';
-    $('#invoice-dialog-description').textContent = 'Vérifiez puis téléchargez cette présentation premium générée localement.';
-    $('#download-invoice-pdf').focus({preventScroll:true});
-  } catch (error) {
-    clearInvoicePdf();
-    const form = $('#invoice-client-form');
-    if (!form.classList.contains('hidden')) {
-      const output = $('#invoice-form-error');
-      output.textContent = 'Le PDF n’a pas pu être créé dans ce navigateur. Réessayez après avoir rechargé la page.';
-      output.classList.remove('hidden');
-      output.focus?.();
-      return;
-    }
-    closeInvoiceDialog();
-    showInvoiceGenerationError('Le PDF n’a pas pu être créé dans ce navigateur. Réessayez après avoir rechargé la page.');
-  }
-}
-
-function openInvoiceGeneration() {
-  showInvoiceGenerationError('');
-  if (activeProfile !== 'billing' || currentView !== 'detail' || !detailClient) return;
-  const invoiceEntries = invoiceEntriesForDetail();
-  if (!invoiceEntries.length) {
-    showInvoiceGenerationError('Aucune saisie n’est disponible pour ce client et ce mois.');
-    return;
-  }
-  const blockedCount = invoiceEntries.filter((entry) => entry.status !== ENTRY_STATUS_VALIDATED).length;
-  if (blockedCount) {
-    showInvoiceGenerationError(`${blockedCount} saisie${blockedCount > 1 ? 's doivent' : ' doit'} encore être validée${blockedCount > 1 ? 's' : ''} pour ce client et ce mois, y compris parmi les lignes éventuellement masquées par le filtre de statut.`);
-    return;
-  }
-
-  invoiceDialogTrigger = document.activeElement;
-  pendingInvoiceEntries = invoiceEntries;
-  clearInvoicePdf();
-  resetInvoiceForm();
-  $('#invoice-preview-panel').classList.add('hidden');
-  $('#invoice-dialog-title').textContent = 'Générer la facture client';
-  $('#invoice-dialog-description').textContent = 'Maquette premium générée localement, sans valeur comptable ni transmission.';
-  const profile = seedBillingProfileForEntries(detailClient, invoiceEntries);
-  const form = $('#invoice-client-form');
-  form.classList.toggle('hidden', Boolean(profile));
-  $('#invoice-dialog').showModal();
-  if (profile) displayInvoicePreview(profile);
-  else {
-    form.elements.name.value = detailClient;
-    form.elements.name.focus({preventScroll:true});
-  }
-}
-
-function invoiceProfileFromForm(form) {
-  const profile = {};
-  const errors = [];
-  Object.entries(INVOICE_FIELD_LIMITS).forEach(([name, maximumLength]) => {
-    const value = normalizeUserInput(form.elements[name].value);
-    profile[name] = value;
-    if (!value) errors.push({name, message:'Tous les champs de l’adresse fictive sont obligatoires.'});
-    else if ([...value].length > maximumLength) errors.push({name, message:`Le champ ${name} dépasse ${maximumLength} caractères.`});
-  });
-  form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute('aria-invalid'));
-  errors.forEach(({name}) => form.elements[name].setAttribute('aria-invalid', 'true'));
-  const output = $('#invoice-form-error');
-  output.textContent = [...new Set(errors.map(({message}) => message))].join(' ');
-  output.classList.toggle('hidden', errors.length === 0);
-  if (errors.length) {
-    form.elements[errors[0].name].focus();
-    return null;
-  }
-  return profile;
-}
-
-function submitInvoiceClientForm(event) {
-  event.preventDefault();
-  const profile = invoiceProfileFromForm(event.currentTarget);
-  if (profile) displayInvoicePreview(profile);
-}
-
-function downloadInvoicePdf() {
-  if (!invoicePdfBlob || !invoicePdfUrl) return;
-  const anchor = document.createElement('a');
-  anchor.href = invoicePdfUrl;
-  anchor.download = invoicePdfFilename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  toast('Téléchargement de la facture fictive lancé');
-}
-
-function clearTrackingPdf() {
-  if (trackingPdfUrl) URL.revokeObjectURL(trackingPdfUrl);
-  trackingPdfUrl = null;
-  trackingPdfBlob = null;
-  trackingPdfFilename = '';
-  $('#pdf-preview').removeAttribute('data');
-}
-
-function closeTrackingPdf() {
-  const dialog = $('#pdf-dialog');
-  if (dialog.open) dialog.close();
-  clearTrackingPdf();
-}
-
-function showTrackingReportError(message) {
-  $('#tracking-report-error').textContent = message;
-  $('#tracking-report-error').classList.toggle('hidden', !message);
-}
-
-function createTrackingPdf() {
+function prepareTrackingReport(allClients) {
   showTrackingReportError('');
   const month = $('#tracking-month-filter').value;
+  const client = allClients ? 'all' : $('#tracking-client-filter').value;
   if (month === 'all') {
-    showTrackingReportError('Sélectionnez un mois pour créer le relevé mensuel.');
+    showTrackingReportError('Sélectionnez un mois pour préparer les relevés.');
     $('#tracking-month-filter').focus();
     return;
   }
-  const filtered = getTrackingEntries().slice().sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  if (!allClients && client === 'all') {
+    showTrackingReportError('Sélectionnez un client pour préparer son PDF.');
+    $('#tracking-client-filter').focus();
+    return;
+  }
+  const filtered = reportEntries();
   if (!filtered.length) {
-    showTrackingReportError('Aucune saisie ne correspond aux filtres actifs. Le PDF n’a pas été créé.');
+    showTrackingReportError('Aucune saisie ne correspond au périmètre. Aucun fichier n’a été créé.');
     return;
   }
   try {
-    clearTrackingPdf();
-    trackingPdfBlob = createPdfBlob(filtered, month);
-    trackingPdfUrl = URL.createObjectURL(trackingPdfBlob);
-    trackingPdfFilename = `somatra-releve-${month}.pdf`;
-    $('#pdf-preview').data = trackingPdfUrl;
-    $('#pdf-send-status').textContent = '';
-    $('#pdf-send-status').classList.add('hidden');
-    $('#send-tracking-pdf').disabled = false;
-    $('#pdf-dialog').showModal();
+    clearPreparedReport();
+    preparedReport = SomatraReports.prepareArtifact(filtered, month, client);
+    const blob = new Blob([preparedReport.bytes], {type:preparedReport.mime});
+    preparedReportUrl = URL.createObjectURL(blob);
+    $('#report-summary').textContent = `${monthLabel(month)} · ${client === 'all' ? 'Tous les clients filtrés' : client} · ${preparedReport.pdfCount} PDF · format ${preparedReport.format}`;
+    $('#report-preview-wrap').classList.toggle('hidden', preparedReport.format !== 'PDF');
+    if (preparedReport.format === 'PDF') $('#report-preview').data = preparedReportUrl;
+    $('#download-prepared-report').textContent = `Télécharger le ${preparedReport.format}`;
+    $('#report-download-status').textContent = '';
+    $('#report-send-status').textContent = '';
+    $('#report-download-status').classList.add('hidden');
+    $('#report-send-status').classList.add('hidden');
+    $('#send-prepared-report').disabled = false;
+    $('#report-dialog').showModal();
   } catch (error) {
-    clearTrackingPdf();
-    showTrackingReportError('Le PDF n’a pas pu être créé dans ce navigateur. Réessayez après avoir rechargé la page.');
+    clearPreparedReport();
+    showTrackingReportError('La génération locale a échoué. Rechargez la page puis réessayez.');
   }
 }
 
-function downloadTrackingPdf() {
-  if (!trackingPdfBlob || !trackingPdfUrl) return;
+function downloadPreparedReport() {
+  if (!preparedReport || !preparedReportUrl) return;
   const anchor = document.createElement('a');
-  anchor.href = trackingPdfUrl;
-  anchor.download = trackingPdfFilename;
+  anchor.href = preparedReportUrl;
+  anchor.download = preparedReport.filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  toast('Téléchargement du relevé PDF lancé');
+  const status = $('#report-download-status');
+  status.textContent = `Téléchargement lancé : ${preparedReport.filename}.`;
+  status.classList.remove('hidden');
+  toast(`Téléchargement ${preparedReport.format} lancé`);
 }
 
-function simulateTrackingPdfSend() {
-  if (!trackingPdfBlob) return;
-  const status = $('#pdf-send-status');
-  status.textContent = 'Envoi simulé confirmé : le relevé n’a été transmis à personne et aucune requête réseau n’a été effectuée.';
+function simulatePreparedReportSend() {
+  if (!preparedReport) return;
+  const sameBytes = preparedReport.bytes;
+  const status = $('#report-send-status');
+  status.dataset.byteLength = String(sameBytes.byteLength);
+  status.textContent = `Envoi simulé : les ${sameBytes.byteLength} octets du ${preparedReport.format} préparé sont réutilisés à l’identique. Personne n’a rien reçu et aucune requête réseau n’a été effectuée.`;
   status.classList.remove('hidden');
-  status.scrollIntoView({ block: 'nearest' });
-  $('#send-tracking-pdf').disabled = true;
-  toast('Simulation d’envoi confirmée — aucune transmission réelle');
+  status.scrollIntoView({block:'nearest'});
+  $('#send-prepared-report').disabled = true;
+}
+
+function closeReportDialog() {
+  const dialog = $('#report-dialog');
+  if (dialog.open) dialog.close();
+  clearPreparedReport();
 }
 
 function toast(message) {
@@ -1726,7 +1066,6 @@ function resetDemo() {
       openTasks,
       referenceClientAssignments,
       pendingTask,
-      detailClient,
       editingEntryId,
       trackingVisibleLimit
     };
@@ -1740,13 +1079,11 @@ function resetDemo() {
     openTasks = [];
     referenceClientAssignments = new Map();
     pendingTask = null;
-    detailClient = null;
     editingEntryId = null;
     trackingVisibleLimit = TRACKING_BATCH_SIZE;
     showTrackingReportError('');
     renderTracking();
     renderOpenTasks();
-    renderBilling();
   } catch (error) {
     if (stateSnapshot) {
       ({
@@ -1755,8 +1092,7 @@ function resetDemo() {
         openTasks,
         referenceClientAssignments,
         pendingTask,
-        detailClient,
-        editingEntryId,
+          editingEntryId,
         trackingVisibleLimit
       } = stateSnapshot);
     }
@@ -1804,17 +1140,17 @@ function loadFullDemo() {
   window.location.reload();
 }
 
-$$('[data-login]').forEach((button) => button.addEventListener('click', () => setProfile(button.dataset.login)));
 document.addEventListener('click', (event) => {
   const actionButton = event.target.closest('[data-action]');
   if (actionButton) navigate(actionButton.dataset.action);
   const mobileTab = event.target.closest('[data-mobile-warehouse-tab]');
-  if (mobileTab && activeProfile === 'warehouse') setWarehouseTab(mobileTab.dataset.mobileWarehouseTab, true);
+  if (mobileTab) setWarehouseTab(mobileTab.dataset.mobileWarehouseTab, true);
+  if (event.target.closest('[data-reset-mobile]')) openResetDialog();
 });
 $$('[data-warehouse-tab]').forEach((button) => button.addEventListener('click', () => setWarehouseTab(button.dataset.warehouseTab)));
-$('#switch-profile').addEventListener('click', () => navigate('profile-select'));
 $('#task-form').addEventListener('submit', (event) => event.preventDefault());
 $('#order-reference').addEventListener('input', updateTaskSelection);
+$('#task-department').addEventListener('input', () => { if ($('#task-department').value.length <= DEPARTMENT_MAX_LENGTH) clearTaskFieldError('task-department', 'task-department-error'); });
 $('#task-activity').addEventListener('change', () => clearTaskFieldError('task-activity', 'task-activity-error'));
 $('#scan-order').addEventListener('click', openScanner);
 $('#close-scan-dialog').addEventListener('click', closeScanner);
@@ -1849,16 +1185,10 @@ $('#save-entry').addEventListener('click', saveEntry);
 $('#comment').addEventListener('input', () => {
   if ($('#comment').value.length <= COMMENT_MAX_LENGTH) clearTaskFieldError('comment', 'comment-error');
 });
+$('#confirm-department').addEventListener('input', () => { if ($('#confirm-department').value.length <= DEPARTMENT_MAX_LENGTH) clearTaskFieldError('confirm-department', 'confirm-department-error'); });
 $('#confirm-activity').addEventListener('change', () => {
   if (isAllowedActivity($('#confirm-activity').value)) clearTaskFieldError('confirm-activity', 'confirm-activity-error');
 });
-['month-filter','client-filter','status-filter'].forEach((id) => $(`#${id}`).addEventListener('change', renderBilling));
-$('#comparison-toggle').addEventListener('click', () => {
-  comparisonOpen = !comparisonOpen;
-  renderComparison();
-  if (comparisonOpen) $('#comparison-content').scrollIntoView({block:'nearest'});
-});
-$('#comparison-period').addEventListener('change', renderComparison);
 ['tracking-month-filter','tracking-client-filter','tracking-order-filter'].forEach((id) => $(`#${id}`).addEventListener('change', () => {
   trackingVisibleLimit = TRACKING_BATCH_SIZE;
   editingEntryId = null;
@@ -1871,34 +1201,12 @@ $('#tracking-load-more').addEventListener('click', () => {
   trackingVisibleLimit += TRACKING_BATCH_SIZE;
   renderTracking();
 });
-$('#export-csv').addEventListener('click', () => exportCsv());
-$('#detail-export').addEventListener('click', () => exportCsv(detailClient));
-$('#generate-invoice').addEventListener('click', openInvoiceGeneration);
-$('#invoice-client-form').addEventListener('submit', submitInvoiceClientForm);
-$('#cancel-invoice-form').addEventListener('click', closeInvoiceDialog);
-$('#download-invoice-pdf').addEventListener('click', downloadInvoicePdf);
-$('#close-invoice-dialog').addEventListener('click', closeInvoiceDialog);
-$('#invoice-dialog').addEventListener('cancel', (event) => {
-  event.preventDefault();
-  closeInvoiceDialog();
-});
-$('#invoice-dialog').addEventListener('close', () => {
-  clearInvoicePdf();
-  resetInvoiceForm();
-  pendingInvoiceEntries = [];
-  $('#invoice-client-form').classList.add('hidden');
-  $('#invoice-preview-panel').classList.add('hidden');
-  if (invoiceDialogTrigger && invoiceDialogTrigger.isConnected) invoiceDialogTrigger.focus();
-  invoiceDialogTrigger = null;
-});
-$('#create-tracking-pdf').addEventListener('click', createTrackingPdf);
-$('#download-tracking-pdf').addEventListener('click', downloadTrackingPdf);
-$('#send-tracking-pdf').addEventListener('click', simulateTrackingPdfSend);
-$('#close-pdf-dialog').addEventListener('click', closeTrackingPdf);
-$('#pdf-dialog').addEventListener('cancel', (event) => {
-  event.preventDefault();
-  closeTrackingPdf();
-});
+$('#prepare-client-pdf').addEventListener('click', () => prepareTrackingReport(false));
+$('#prepare-all-zip').addEventListener('click', () => prepareTrackingReport(true));
+$('#download-prepared-report').addEventListener('click', downloadPreparedReport);
+$('#send-prepared-report').addEventListener('click', simulatePreparedReportSend);
+$('#close-report-dialog').addEventListener('click', closeReportDialog);
+$('#report-dialog').addEventListener('cancel', (event) => { event.preventDefault(); closeReportDialog(); });
 $('#open-reset-dialog').addEventListener('click', openResetDialog);
 $('#close-reset-dialog').addEventListener('click', closeResetDialog);
 $('#cancel-reset').addEventListener('click', closeResetDialog);
@@ -1920,5 +1228,4 @@ window.setInterval(refreshRunningDurations, 1000);
 $('#warehouse-greeting').textContent = AUTHENTICATED_OPERATOR;
 $('#task-activity').innerHTML = activityOptions('', 'Choisir après');
 updateTaskSelection();
-updateBillingClientFilter();
-showView('login');
+showView('warehouse');
