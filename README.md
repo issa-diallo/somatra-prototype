@@ -1,148 +1,77 @@
-# Somatra — prototype de suivi des préparations
+# Somatra — relevés magasinier
 
 [![Démo publique](https://img.shields.io/badge/d%C3%A9mo_GitHub_Pages-ouvrir-0969da?logo=github)](https://issa-diallo.github.io/somatra-prototype/)
 
-Prototype web statique, responsive et mobile-first pour démontrer le suivi du temps de préparation logistique et sa consolidation mensuelle.
+Prototype web statique, responsive et mobile-first destiné au magasinier pour suivre les préparations et produire des relevés mensuels par client.
 
 > [!WARNING]
-> **Démonstration commerciale uniquement.** Toutes les données et tous les montants sont fictifs. L’état est conservé dans le `localStorage` du navigateur : il n’existe ni authentification, ni backend, ni base partagée, ni facturation réelle. Ce prototype n’est pas adapté à la production.
+> Démonstration commerciale uniquement, avec données synthétiques. L’état reste dans le `localStorage` du navigateur : aucune authentification, aucun backend, aucune base partagée et aucune transmission réelle.
 
 ## Fonctionnalités
 
-### Profil Magasinier
-
-- Identité opérateur simulée et non modifiable **Magasinier démo**, automatiquement associée aux nouvelles préparations ; le profil reste opérationnel et les saisies restent éditables.
-- Scan local de QR codes et codes-barres avec la caméra lorsque le navigateur le permet, ou saisie manuelle d’une référence.
-- Acceptation de toute référence non vide de **120 caractères maximum**, sans résolution ni validation par un référentiel backend. Le scan remplit le champ ; le démarrage reste une action explicite.
-- Attribution locale des références inconnues à **Client A**, puis **Client B**, **Client C**, etc. (AA après Z). Une même référence normalisée conserve son client après rechargement ; les attributions déjà stockées et leurs suffixes sont préservés, tandis que les commandes fictives initiales ne consomment pas la séquence. En cas d’anciennes données conflictuelles pour une référence, la première attribution valide des saisies, puis des tâches ouvertes, prévaut ; une modification explicite propage le nouveau client à toute la référence.
-- Suivi de plusieurs préparations simultanées et indépendantes, avec pause, reprise et fin individuelles.
-- Persistance des préparations ouvertes et de leur chronométrage, y compris après actualisation ou fermeture de la page.
-- Choix facultatif de l’activité au démarrage parmi six valeurs proposées, ou choix reporté à l’arrêt ; une activité valide est obligatoire lors de la confirmation finale et reste modifiable dans **Suivi**.
-- Confirmation et correction de la durée avant enregistrement, avec commentaire facultatif, séparé de l’activité et limité à **240 caractères**.
-- Vue **Suivi** sans prix ni montant financier :
-  - liste compacte adaptée au tactile ;
-  - affichage initial de 20 lignes, puis chargement par lots de 20 ;
-  - filtres par mois, client/commande et référence de préparation, repliables sur mobile ;
-  - KPI calculés sur **toutes** les saisies correspondant aux filtres, même lorsque seules les 20 premières lignes sont rendues ;
-  - affichage de l’activité et modification au clic d’une ligne : client/commande, référence, date, durée, activité et statut ;
-  - toute préparation finalisée est enregistrée avec **À valider**, puis son statut est
-    limité aux valeurs proposées **À valider** et **Validé** selon le parcours **À valider
-    → Validé** ;
-  - relevé mensuel PDF réel basé sur le mois et les filtres actifs, affiché dans le navigateur et téléchargeable, sans donnée financière, paginé par saisie et incluant l’opérateur, l’activité et le commentaire séparé lorsqu’il existe ;
-  - simulation explicite de son envoi au service facturation, sans e-mail, API ni requête réseau.
-
-### Profil Facturation
-
-- Jeu initial immédiatement démontrable avec **six clients fictifs, de Client A à Client F**, 240 préparations validées et environ **60 000 CHF estimés sur le mois courant**. Août 2025 présente volontairement seulement cinq clients, 125 préparations et environ 42 000 CHF afin de rendre l’évolution N−1 immédiatement visible.
-- Synthèse mensuelle fictive en CHF : clients, préparations, temps total et montant estimé.
-- Filtres par mois, client et statut.
-- Comparatif graphique affiché à la demande entre le mois sélectionné et le mois précédent ou le même mois N−1, avec KPI d’évolution et histogramme du chiffre d’affaires estimé global selon les filtres actifs, sans inventer de données historiques absentes.
-- Détail des préparations d’un client, avec leur activité.
-- Export CSV des résultats filtrés, avec l’activité et des montants estimés en CHF calculés selon un tarif fictif.
-- Génération locale d’une facture PDF explicitement fictive depuis le détail client :
-  - toutes les saisies du client et du mois doivent être **Validé**, y compris celles masquées par le filtre de statut ;
-  - les clients des commandes fictives initiales utilisent une adresse générique intégrée ;
-  - une référence inconnue demande une adresse synthétique uniquement pour le PDF courant, sans la conserver dans le navigateur ;
-  - la présentation premium reprend l’identité visuelle Somatra, le client et le mois affichés dans l’application, les indicateurs mensuels, le total estimé et une annexe paginée ; chaque ligne reprend la date, la référence, l’opérateur, l’activité, la durée, le statut, le commentaire et le montant calculé avec le même tarif fictif que le détail client, sans TVA réelle, transmission ni valeur comptable.
-
-Les informations financières et l’export CSV sont visibles uniquement dans l’interface **Facturation** ; aucun prix n’apparaît dans l’interface **Magasinier** ni dans son relevé PDF. Cette séparation est simulée et ne repose sur aucune authentification réelle.
+- Ouverture directe de l’espace **Magasinier**, sans choix de profil.
+- Parcours **Nouvelle**, **En cours** et **Suivi**, plus gestion des données de démonstration.
+- Scan local ou saisie manuelle d’une référence libre de 120 caractères maximum.
+- Plusieurs chronomètres simultanés, indépendants et persistants entre les rechargements.
+- Activité contrôlée et département facultatif (80 caractères maximum), conservés par préparation.
+- Édition du client, de la référence, de la date, du département, de l’activité, de l’opérateur, de la durée et du statut.
+- Suivi dense par lots de 20, filtres mois/client/préparation et KPI calculés sur tous les résultats filtrés.
+- Relevé PDF individuel : bandeau client et mois, tableau **Date / Département / Activité / Nom / Temps**, puis total mensuel en minutes.
+- Archive ZIP locale contenant exactement un PDF non vide par client du mois et de la préparation filtrés.
+- Noms de fichiers explicites, sûrs et déterministes.
+- Téléchargement et envoi simulé fondés sur le même artifact préparé en mémoire : aucune régénération divergente et aucune requête réseau.
 
 ## Parcours de démonstration
 
-1. Sur l’écran **Profil**, choisir **Magasinier** ; l’application ouvre le menu **Nouvelle**.
-2. Scanner un QR code/code-barres ou saisir une référence, puis appuyer explicitement sur le bouton de démarrage.
-3. Choisir éventuellement une activité avant le démarrage ; **Choisir après** reporte ce choix sans enregistrer de valeur vide.
-4. Dans **En cours**, lancer éventuellement d’autres préparations, puis mettre en pause, reprendre ou terminer chacune indépendamment.
-5. À la fin d’une préparation, ajuster si nécessaire la durée, confirmer obligatoirement l’activité et enregistrer le commentaire séparément.
-6. Dans **Suivi**, filtrer les saisies, consulter les KPI, toucher une ligne pour modifier ses informations, notamment l’activité, puis sélectionner un mois afin d’afficher, télécharger et simuler l’envoi du relevé PDF non financier.
-7. Revenir à **Profil** et choisir **Facturation**.
-8. Dans **Facturation**, filtrer la synthèse, afficher le comparatif M−1 ou N−1, ouvrir le détail d’un client, exporter le CSV fictif ou générer une facture PDF de démonstration lorsque toutes les saisies mensuelles du client sont validées.
+1. L’application ouvre directement **Nouvelle**.
+2. Saisir ou scanner une référence, renseigner éventuellement le département et l’activité, puis démarrer.
+3. Dans **En cours**, pauser, reprendre ou terminer chaque préparation indépendamment.
+4. À la fin, corriger la durée, confirmer l’activité et, si besoin, le département.
+5. Dans **Suivi**, choisir un mois et un client pour préparer son PDF, ou choisir **Télécharger tous les clients** pour préparer le ZIP du périmètre filtré.
+6. Vérifier le récapitulatif (mois, portée, nombre de PDF, format), télécharger ou simuler l’envoi du même fichier.
 
-## Lancer localement
-
-L’application ne nécessite ni Node.js ni installation de dépendances pour s’exécuter. Depuis la racine du dépôt :
+## Lancer et valider localement
 
 ```bash
 python3 -m http.server 8080 --bind 127.0.0.1
-```
+# ouvrir http://127.0.0.1:8080/
 
-Ouvrir ensuite <http://127.0.0.1:8080/>.
-
-Node.js est facultatif en local et sert uniquement, si souhaité, à vérifier la syntaxe JavaScript (la CI utilise Node.js 24) :
-
-```bash
 node --check app.js
+node --check report-utils.js
+node --test tests/*.test.js
 ```
 
-## Architecture et fichiers
+Aucune installation de dépendance n’est nécessaire. `report-utils.js` construit les PDF et ZIP directement dans le navigateur.
 
-- `index.html` : structure des vues, formulaires et navigation.
-- `styles.css` : interface responsive, mobile-first et adaptée aux interactions tactiles.
-- `app.js` : état de démonstration, attribution des clients, chronomètres, filtres, édition, PDF local, synthèse et export CSV.
-- `assets/` : ressources statiques, dont le logo Somatra.
+## Fichiers
+
+- `index.html` : vues, formulaires, dialogues et navigation.
+- `styles.css` : interface responsive et tactile.
+- `app.js` : stockage local, chronomètres, scan, filtres, édition, reset et orchestration des relevés.
+- `report-utils.js` : génération déterministe des octets PDF/ZIP, sans dépendance.
+- `tests/` : tests ciblés Node.js.
 - `.github/workflows/ci-pages.yml` : validation et publication GitHub Pages.
-- `BRIEF-PROTOTYPE.md` : objectifs, contraintes et périmètre fonctionnel du prototype.
 
-## Stockage local et réinitialisation
+## Stockage local et compatibilité
 
-L’application utilise ou peut lire trois clés :
+Le prototype conserve exactement trois clés :
 
 - `somatra-demo-entries-v1` : saisies enregistrées ;
-- `somatra-demo-clients-v1` : clients et commandes fictifs ; cette clé peut être lue, mais n’est plus écrite dans le flux courant ;
-- `somatra-demo-open-preparations-v1` : préparations ouvertes et état des chronomètres.
+- `somatra-demo-clients-v1` : clients et commandes synthétiques ;
+- `somatra-demo-open-preparations-v1` : préparations et chronomètres ouverts.
 
-Depuis l’écran **Profil**, le bouton **Gérer les données de démonstration** ouvre un dialogue présentant deux actions explicites. L’ouverture ou la fermeture du dialogue, **Annuler**, Échap et un clic hors du dialogue ne modifient rien. **Tout réinitialiser** écrit les valeurs JSON vides `[]`, `{}` et `[]` dans les trois clés Somatra ci-dessus, vérifie ces valeurs, vide immédiatement le Suivi, la Facturation et les préparations ouvertes, puis recharge la page. Toute autre clé du navigateur reste intacte.
+Les propriétés `activity` et `department` sont additives et facultatives. Les anciennes données sans département restent lisibles avec **Non renseigné** et ne sont pas réécrites au chargement. L’ancien statut exact **À contrôler** est interprété en mémoire comme **À valider**, sans migration destructive.
 
-Depuis ce même dialogue, **Charger la démo complète** remplace explicitement les trois valeurs Somatra par le jeu fictif initial Client A à Client F et ferme les éventuelles préparations ouvertes. Cette action permet de retrouver les données enrichies dans un navigateur qui conservait une ancienne démonstration ; elle vérifie les écritures et restaure les valeurs précédentes en cas d’échec.
+**Tout réinitialiser** écrit `[]`, `{}` et `[]` dans les trois clés, sans toucher aux autres données de l’origine. **Charger la démo complète** restaure le jeu synthétique. Les écritures sont vérifiées et compensées en cas d’échec.
 
-Une clé absente représente un premier lancement et charge les données fictives initiales. Une clé présente avec sa structure JSON vide représente au contraire une réinitialisation confirmée : le Suivi reste donc vide après les rechargements suivants. La prochaine référence inconnue repart de **Client A**.
+## Relevés et sécurité
 
-Si une écriture ou sa vérification échoue, l’application restaure puis vérifie les trois valeurs brutes précédentes, conserve le dialogue ouvert, affiche une erreur et ne recharge pas la page. Si cette compensation ne peut pas être garantie, le message signale explicitement l’incertitude. Si le `localStorage` est indisponible ou bloqué, le prototype peut rester utilisable pendant la session, sans garantie de persistance. En repli, les trois clés Somatra peuvent être effacées individuellement dans les outils de développement avant de recharger la page pour retrouver les données fictives initiales ; ne pas vider tout le stockage du site.
+Les PDF et ZIP sont générés localement. Un relevé n’est jamais créé sans ligne. L’archive ZIP utilise le format standard sans compression et peut être extraite avec un outil ZIP courant. Les champs libres portant un indicateur financier sont entièrement masqués dans les documents opérationnels.
 
-Cette réinitialisation concerne exclusivement des données fictives locales : aucune clé étrangère, donnée réelle ou transmission réseau n’est impliquée.
+L’action d’envoi est une simulation : elle réutilise la même référence d’octets que le téléchargement et n’appelle ni `fetch`, ni XHR, ni `sendBeacon`, ni service externe.
 
-La propriété facultative `activity` est additive sur les saisies et préparations ouvertes. Les anciennes données sans ce champ restent lisibles avec le libellé **Non renseignée** ; une ancienne valeur inconnue est affichée comme texte sûr, mais ne devient jamais une option valide à la prochaine sauvegarde. Le chargement n’effectue aucune réécriture destructive pour compléter ou normaliser ce champ, et les trois clés restent inchangées.
-
-Les coordonnées synthétiques saisies pour la facture fictive d’un nouveau client restent uniquement en mémoire pendant l’aperçu. Elles sont effacées à la fermeture du dialogue et ne modifient aucune des trois clés `localStorage`.
-
-Pour les saisies enregistrées, l’ancien statut exact **À contrôler** est interprété comme
-**À valider** en mémoire afin de rester compatible avec les données existantes. Le
-chargement seul ne réécrit pas cette valeur brute, ne crée aucune clé et ne déclenche ni
-reset ni migration destructive. Tout autre statut historique inconnu reste affiché de
-façon sûre et doit être remplacé explicitement par **À valider** ou **Validé** lors d’une
-édition. Cette normalisation ne concerne jamais les états techniques `running` et
-`paused` des préparations ouvertes. Les trois clés `localStorage` listées ci-dessus
-restent inchangées.
+Le stockage local n’est ni partagé ni protégé par des rôles réels. Toute personne utilisant le même profil de navigateur peut consulter ou modifier les données de démonstration. Une mise en production nécessiterait notamment backend, authentification, autorisations, stockage partagé, audit, tests complets et analyse de sécurité.
 
 ## CI et déploiement
 
-Le workflow GitHub Actions :
-
-1. utilise Node.js **24** pour exécuter `node --check app.js` ;
-2. contrôle la présence des fichiers attendus et la structure HTML ;
-3. effectue un smoke test HTTP sur la page et ses ressources statiques ;
-4. publie l’artefact sur GitHub Pages après validation d’un `push` sur `main`.
-
-Les pull requests vers `main` exécutent la validation sans publier le site. Le workflow peut également être lancé manuellement.
-
-## Sécurité et confidentialité
-
-- Utiliser uniquement les données synthétiques fournies ; ne saisir aucune donnée personnelle, client ou commande réelle.
-- Le flux caméra est analysé localement par le navigateur : aucune image n’est envoyée ni stockée par l’application.
-- Le scan dépend de `getUserMedia`, de `BarcodeDetector`, d’une caméra compatible, de l’autorisation de l’utilisateur et des règles de contexte sécurisé du navigateur. La prise en charge varie selon le navigateur et l’appareil ; la saisie manuelle reste disponible.
-- Le stockage est local au navigateur, sans chiffrement applicatif, synchronisation serveur ni contrôle d’accès : toute personne utilisant le même profil de navigateur peut potentiellement consulter ou modifier l’état de démonstration. Le PDF est construit dans le navigateur sous forme de `Blob` `application/pdf` et sa simulation d’envoi ne transmet rien.
-- La facture PDF du profil Facturation est un document de démonstration sans valeur comptable, sans TVA réelle, sans numérotation légale et sans demande de paiement.
-
-## Limites avant une mise en production
-
-Une application réelle nécessiterait notamment :
-
-- un backend et un référentiel fiable des commandes et clients ;
-- une authentification réelle, des rôles et des contrôles d’accès ;
-- une persistance partagée, synchronisée, sauvegardée et résiliente ;
-- des règles d’autorisation pour l’édition, la validation des temps et un journal d’audit ;
-- une intégration cadrée au système de facturation, sans tarif de démonstration ;
-- une stratégie de tests complète (unitaires, intégration, bout en bout, compatibilité et accessibilité) ;
-- une analyse de sécurité et de confidentialité, la protection des données, la supervision et un hébergement adaptés.
-
-Ces éléments sont hors du périmètre du prototype actuel.
+La CI vérifie la syntaxe JavaScript, la structure HTML et le smoke HTTP. Les pull requests valident sans publier ; seul un push sur `main` publie GitHub Pages.

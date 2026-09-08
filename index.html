@@ -15,35 +15,12 @@
     </button>
     <div class="header-actions">
       <span class="demo-badge">Démonstration — données fictives</span>
-      <button id="switch-profile" class="icon-button hidden" type="button" title="Changer de profil" aria-label="Changer de profil">⇄</button>
+      <button id="open-reset-dialog" class="icon-button" type="button" title="Gérer les données" aria-label="Gérer les données de démonstration">↻</button>
     </div>
   </header>
 
   <main id="app" tabindex="-1">
-    <section id="view-login" class="view login-view" aria-labelledby="login-title">
-      <div class="login-panel">
-        <img class="login-logo" src="assets/somatra-logo.jpg?v=__SOMATRA_ASSET_VERSION__" alt="Somatra Transports Internationaux — depuis 1959">
-        <div class="eyebrow">Prototype interactif</div>
-        <h1 id="login-title">Bienvenue sur Somatra</h1>
-        <p class="lead">Choisissez un profil pour lancer le parcours de démonstration.</p>
-        <div class="profile-grid">
-          <button class="profile-card" type="button" data-login="warehouse">
-            <span class="profile-icon" aria-hidden="true">▦</span>
-            <span><strong>Magasinier</strong><small>Enregistrer un temps de préparation</small></span>
-            <span class="arrow">→</span>
-          </button>
-          <button class="profile-card" type="button" data-login="billing">
-            <span class="profile-icon billing" aria-hidden="true">CHF</span>
-            <span><strong>Facturation</strong><small>Contrôler et exporter les temps</small></span>
-            <span class="arrow">→</span>
-          </button>
-        </div>
-        <button id="open-reset-dialog" class="reset-demo-trigger" type="button">Gérer les données de démonstration</button>
-        <div class="notice"><strong>Environnement de démonstration</strong><br>Aucune authentification, aucune donnée réelle, aucune transmission serveur.</div>
-      </div>
-    </section>
-
-    <section id="view-warehouse" class="view hidden" aria-labelledby="warehouse-title">
+    <section id="view-warehouse" class="view" aria-labelledby="warehouse-title">
       <div class="page-heading">
         <div><div class="eyebrow">Espace magasinier</div><h1 id="warehouse-title">Préparations</h1><p><span id="warehouse-greeting">Magasinier démo</span> <span class="status-dot"></span> Poste actif</p></div>
 
@@ -65,6 +42,9 @@
           </div>
           <p id="order-help" class="hint search-hint">Le scan est prioritaire ; la saisie manuelle reste toujours disponible.</p>
           <p id="order-reference-error" class="field-error task-field-error hidden" role="alert"></p>
+          <label for="task-department">Département <span class="optional">(facultatif)</span></label>
+          <input id="task-department" type="text" maxlength="80" autocomplete="off" placeholder="Ex. Réception" aria-describedby="task-department-error">
+          <p id="task-department-error" class="field-error task-field-error hidden" role="alert"></p>
           <label for="task-activity">Activité <span class="optional">(facultatif au démarrage)</span></label>
           <select id="task-activity" aria-describedby="task-activity-help task-activity-error">
             <option value="">Choisir après</option>
@@ -99,8 +79,8 @@
           <label>Préparation<select id="tracking-order-filter"></select></label>
         </div>
         <div class="tracking-report-actions panel" aria-labelledby="tracking-report-title">
-          <div><h2 id="tracking-report-title">Relevé mensuel</h2><p>Créez un PDF non financier à partir du mois et des filtres actifs.</p></div>
-          <button id="create-tracking-pdf" class="primary" type="button">Afficher le PDF</button>
+          <div><h2 id="tracking-report-title">Relevés mensuels</h2><p>Sélectionnez un mois et un client pour son PDF, ou préparez un ZIP avec un PDF par client filtré.</p></div>
+          <div class="tracking-report-buttons"><button id="prepare-client-pdf" class="primary" type="button">Préparer le PDF client</button><button id="prepare-all-zip" class="secondary" type="button">Télécharger tous les clients</button></div>
           <p id="tracking-report-error" class="tracking-report-error hidden" role="alert"></p>
         </div>
         <div id="tracking-kpis" class="kpi-grid tracking-kpis"></div>
@@ -134,6 +114,9 @@
             <p id="duration-error" class="field-error hidden">Indiquez une durée supérieure à zéro.</p>
             <p class="hint">Vous pouvez corriger la durée calculée.</p>
           </fieldset>
+          <label for="confirm-department">Département <span class="optional">(facultatif)</span></label>
+          <input id="confirm-department" type="text" maxlength="80" autocomplete="off" aria-describedby="confirm-department-error">
+          <p id="confirm-department-error" class="field-error hidden" role="alert"></p>
           <label for="confirm-activity">Activité</label>
           <select id="confirm-activity" required aria-describedby="confirm-activity-error">
             <option value="">Sélectionner une activité</option>
@@ -148,64 +131,6 @@
       </div>
     </section>
 
-    <section id="view-billing" class="view hidden" aria-labelledby="billing-title">
-      <div class="page-heading billing-heading">
-        <div><div class="eyebrow">Espace facturation</div><h1 id="billing-title">Synthèse mensuelle</h1><p>Contrôle des temps de préparation avant export.</p></div>
-        <button class="secondary desktop-only" type="button" data-action="profile-select">Changer de profil</button>
-      </div>
-      <div class="filter-bar panel">
-        <label>Mois<select id="month-filter"><option value="2026-08">Août 2026</option><option value="2026-07">Juillet 2026</option></select></label>
-        <label>Client<select id="client-filter"><option value="all">Tous les clients</option><option>Client A</option><option>Client B</option><option>Client C</option></select></label>
-        <label>Statut<select id="status-filter"><option value="all">Tous les statuts</option><option value="À valider">À valider</option><option value="Validé">Validé</option></select></label>
-        <button id="export-csv" class="primary export-button" type="button">⇩ Exporter en CSV</button>
-      </div>
-      <div id="kpi-grid" class="kpi-grid"></div>
-      <section class="comparison-panel panel" aria-labelledby="comparison-title">
-        <div class="comparison-heading">
-          <div><div class="eyebrow">Analyse à la demande</div><h2 id="comparison-title">Comparer les périodes</h2><p>Visualisez l’évolution des préparations, du temps et du montant estimé selon les filtres actifs.</p></div>
-          <button id="comparison-toggle" class="secondary" type="button" aria-expanded="false" aria-controls="comparison-content">Afficher le comparatif</button>
-        </div>
-        <div id="comparison-content" class="comparison-content hidden">
-          <div class="comparison-toolbar">
-            <label for="comparison-period">Comparer avec</label>
-            <select id="comparison-period">
-              <option value="previous-year">Le même mois N−1</option>
-              <option value="previous-month">Le mois précédent</option>
-            </select>
-          </div>
-          <p id="comparison-summary" class="comparison-summary" aria-live="polite"></p>
-          <div id="comparison-chart" class="comparison-chart"></div>
-          <section class="comparison-revenue" aria-labelledby="comparison-revenue-title">
-            <div class="comparison-revenue-heading">
-              <div><div class="eyebrow">Évolution annuelle</div><h3 id="comparison-revenue-title">Chiffre d’affaires estimé</h3><p>Comparaison globale sur le périmètre actuellement filtré.</p></div>
-            </div>
-            <div id="comparison-revenue-chart" class="comparison-revenue-chart"></div>
-          </section>
-          <p class="table-note">Comparaison de démonstration calculée localement à partir des données disponibles.</p>
-        </div>
-      </section>
-      <div class="panel table-panel">
-        <div class="section-heading"><div><h2>Temps par client</h2><p id="result-count"></p></div><span class="fictional-rate">Tarif fictif : 42.00 CHF / h</span></div>
-        <div class="table-scroll"><table><thead><tr><th>Client</th><th>Préparations</th><th>Temps total</th><th>Montant estimé*</th><th>Statut</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="billing-rows"></tbody></table></div>
-        <p class="table-note">* Estimation de démonstration sur la base d’un tarif entièrement fictif.</p>
-      </div>
-    </section>
-
-    <section id="view-detail" class="view hidden" aria-labelledby="detail-title">
-      <div class="page-heading">
-        <div><button class="back-button" type="button" data-action="billing">← Synthèse mensuelle</button><div class="eyebrow">Détail client · <span id="detail-month"></span></div><h1 id="detail-title">Client A</h1><p>Liste des préparations enregistrées.</p></div>
-        <div class="detail-actions">
-          <button id="detail-export" class="secondary" type="button">⇩ Exporter ce client</button>
-          <button id="generate-invoice" class="primary" type="button">Générer la facture</button>
-          <p id="invoice-generation-error" class="invoice-generation-error hidden" role="alert" aria-live="assertive"></p>
-        </div>
-      </div>
-      <div id="detail-kpis" class="kpi-grid detail-kpis"></div>
-      <div class="panel table-panel">
-        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Commande</th><th>Opérateur</th><th>Durée</th><th>Activité</th><th>Commentaire</th><th>Statut</th><th>Montant estimé*</th></tr></thead><tbody id="detail-rows"></tbody></table></div>
-        <p class="table-note">* Chaque montant reprend la même durée et le même tarif fictif de 42.00 CHF / h que la facture PDF.</p>
-      </div>
-    </section>
   </main>
 
 
@@ -222,56 +147,21 @@
     </div>
   </dialog>
 
-  <dialog id="pdf-dialog" class="pdf-dialog" aria-labelledby="pdf-dialog-title" aria-describedby="pdf-dialog-description">
+  <dialog id="report-dialog" class="pdf-dialog" aria-labelledby="report-dialog-title" aria-describedby="report-summary">
     <div class="pdf-dialog-content">
       <div class="dialog-heading">
-        <div><div class="eyebrow">Données fictives</div><h2 id="pdf-dialog-title">Relevé mensuel des préparations</h2></div>
-        <button id="close-pdf-dialog" class="dialog-close" type="button" aria-label="Fermer le relevé PDF">×</button>
+        <div><div class="eyebrow">Document préparé localement</div><h2 id="report-dialog-title">Relevés mensuels</h2></div>
+        <button id="close-report-dialog" class="dialog-close" type="button" aria-label="Fermer le document préparé">×</button>
       </div>
-      <p id="pdf-dialog-description">Aperçu du relevé non financier généré localement dans votre navigateur.</p>
-      <object id="pdf-preview" class="pdf-preview" type="application/pdf" title="Aperçu du relevé mensuel PDF">
-        <p>Votre navigateur ne peut pas afficher cet aperçu PDF. Utilisez le bouton de téléchargement.</p>
-      </object>
+      <p id="report-summary" class="report-summary"></p>
+      <div id="report-preview-wrap"><object id="report-preview" class="pdf-preview" type="application/pdf" title="Aperçu du relevé client"><p>Aperçu indisponible. Utilisez le téléchargement.</p></object></div>
       <div class="pdf-dialog-actions">
-        <button id="download-tracking-pdf" class="secondary" type="button">Télécharger le PDF</button>
-        <button id="send-tracking-pdf" class="primary" type="button">Simuler l’envoi à la facturation</button>
+        <button id="download-prepared-report" class="secondary" type="button">Télécharger</button>
+        <button id="send-prepared-report" class="primary" type="button">Simuler l’envoi au service destinataire</button>
       </div>
-      <p class="pdf-simulation-note">Simulation uniquement : aucun e-mail, serveur ou service externe n’est contacté.</p>
-      <p id="pdf-send-status" class="pdf-send-status hidden" role="status" aria-live="polite"></p>
-    </div>
-  </dialog>
-
-  <dialog id="invoice-dialog" class="pdf-dialog invoice-dialog" aria-labelledby="invoice-dialog-title" aria-describedby="invoice-dialog-description">
-    <div class="pdf-dialog-content">
-      <div class="dialog-heading">
-        <div><div class="eyebrow">Facturation fictive</div><h2 id="invoice-dialog-title">Générer la facture client</h2></div>
-        <button id="close-invoice-dialog" class="dialog-close" type="button" aria-label="Fermer la facture fictive">×</button>
-      </div>
-      <p id="invoice-dialog-description">Maquette premium générée localement, sans valeur comptable ni transmission.</p>
-      <form id="invoice-client-form" class="invoice-client-form hidden" novalidate>
-        <div class="invoice-form-intro">
-          <strong>Nouveau client détecté</strong>
-          <p>Complétez une adresse entièrement fictive pour ce PDF uniquement. Ces informations ne seront pas enregistrées.</p>
-        </div>
-        <div class="invoice-form-grid">
-          <label>Raison sociale<input name="name" type="text" maxlength="120" autocomplete="off" required></label>
-          <label>Rue<input name="street" type="text" maxlength="160" autocomplete="off" required></label>
-          <label>Code postal<input name="postalCode" type="text" maxlength="20" autocomplete="off" required></label>
-          <label>Ville<input name="city" type="text" maxlength="100" autocomplete="off" required></label>
-          <label>Pays<input name="country" type="text" maxlength="80" autocomplete="off" required></label>
-        </div>
-        <p id="invoice-form-error" class="invoice-form-error hidden" role="alert" aria-live="assertive"></p>
-        <div class="invoice-form-actions"><button id="cancel-invoice-form" class="secondary" type="button">Annuler</button><button class="primary" type="submit">Créer l’aperçu PDF</button></div>
-      </form>
-      <div id="invoice-preview-panel" class="hidden">
-        <object id="invoice-preview" class="pdf-preview" type="application/pdf" title="Aperçu de la facture fictive">
-          <p>Votre navigateur ne peut pas afficher cet aperçu PDF. Utilisez le bouton de téléchargement.</p>
-        </object>
-        <div class="pdf-dialog-actions">
-          <button id="download-invoice-pdf" class="primary" type="button">Télécharger le PDF</button>
-        </div>
-        <p class="pdf-simulation-note">Facture fictive uniquement : aucune TVA réelle, écriture comptable, transmission ou demande de paiement.</p>
-      </div>
+      <p class="pdf-simulation-note">Simulation uniquement : les mêmes octets préparés sont réutilisés, sans e-mail, serveur ni réseau.</p>
+      <p id="report-download-status" class="pdf-send-status hidden" role="status" aria-live="polite"></p>
+      <p id="report-send-status" class="pdf-send-status hidden" role="status" aria-live="polite"></p>
     </div>
   </dialog>
 
@@ -282,7 +172,7 @@
         <button id="close-reset-dialog" class="dialog-close" type="button" aria-label="Fermer sans modifier les données">×</button>
       </div>
       <div id="reset-dialog-description">
-        <p><strong>Charger la démo complète</strong> remplace les données actuelles par le jeu fictif Client A à Client F, soit 240 préparations et environ 60&nbsp;000 CHF sur août 2026.</p>
+        <p><strong>Charger la démo complète</strong> remplace les données actuelles par le jeu fictif Client A à Client F avec des préparations synthétiques.</p>
         <p><strong>Tout réinitialiser</strong> vide uniquement les données fictives Somatra conservées dans ce navigateur&nbsp;:</p>
         <ul>
           <li>les clients et références ajoutés&nbsp;;</li>
@@ -303,6 +193,7 @@
 
   <nav id="mobile-nav" class="mobile-nav hidden" aria-label="Navigation principale"></nav>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="report-utils.js?v=__SOMATRA_ASSET_VERSION__"></script>
   <script src="app.js?v=__SOMATRA_ASSET_VERSION__"></script>
 </body>
 </html>

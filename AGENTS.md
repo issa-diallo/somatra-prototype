@@ -29,8 +29,9 @@ humaine.
 
 - `index.html` : vues, formulaires, dialogues et navigation.
 - `styles.css` : présentation responsive, tactile et états visuels.
-- `app.js` : état, seeds, stockage, chronomètres, scan, filtres, édition, PDF local,
-  facturation et CSV.
+- `app.js` : état, seeds, stockage, chronomètres, scan, filtres, édition et orchestration
+  des relevés locaux.
+- `report-utils.js` : génération déterministe des PDF et ZIP sans dépendance.
 - `assets/` : ressources statiques, dont `somatra-logo.jpg`.
 - `.github/workflows/ci-pages.yml` : validation et publication GitHub Pages.
 - `README.md`, `COMMITS.md`, `BRIEF-PROTOTYPE.md` : documentation.
@@ -59,10 +60,12 @@ humaine.
 
 ### Espace Magasinier
 
-- Conserver **Nouvelle**, **En cours**, **Suivi** et **Profil**.
-- N’y afficher aucun prix, CHF, tarif ni élément de facturation. Le seul export autorisé
-  est le relevé mensuel PDF non financier du suivi, généré localement et dont l’envoi au
-  service facturation est explicitement simulé sans transmission.
+- Ouvrir directement l’espace magasinier et conserver **Nouvelle**, **En cours**, **Suivi**
+  et la gestion des données de démonstration. Aucun choix de profil ni espace financier ne
+  doit être présent ou accessible.
+- N’y afficher aucune donnée financière. Les seuls fichiers autorisés sont le relevé PDF
+  individuel et le ZIP de relevés par client, générés localement. L’envoi est explicitement
+  simulé sans transmission et réutilise exactement les octets préparés pour le téléchargement.
 - Garder le suivi compact, tactile et viable avec au moins 50 lignes : 20 initiales,
   chargées ensuite par lots de 20.
 - Sur mobile, les filtres restent repliables et réinitialisables.
@@ -70,13 +73,6 @@ humaine.
 - Une ligne ouvre l’édition du client/commande, de la référence, date, durée et statut.
 - Toute préparation finalisée est enregistrée avec le statut **À valider**. Limiter les
   statuts éditables à **À valider** et **Validé**, selon le parcours **À valider → Validé**.
-
-### Espace Facturation
-
-- Maintenir une interface distincte avec filtres, synthèse, détail client et CSV filtré.
-- Signaler explicitement les montants CHF et tarifs comme fictifs.
-- La séparation des profils simule une interface, pas une authentification ni un contrôle
-  d’accès.
 
 ### Client inconnu et compatibilité
 
@@ -102,6 +98,10 @@ humaine.
   **Non renseignée** ; une valeur historique inconnue reste lisible de façon sûre. Ne
   jamais réécrire destructivement les données au chargement pour ajouter, normaliser ou
   supprimer cette propriété.
+- Une préparation ouverte ou une saisie peut porter la propriété additive facultative
+  `department`, limitée à 80 caractères pour les nouvelles écritures. Les anciennes données
+  sans ce champ restent compatibles et affichent **Non renseigné** ; le chargement ne réécrit
+  jamais les données pour ajouter ou normaliser cette propriété.
 - Pour les saisies enregistrées uniquement, interpréter l’ancien statut exact **À
   contrôler** comme **À valider** en mémoire. Cette compatibilité de lecture ne déclenche
   aucun `setItem`, reset, changement de clé ou migration destructive au chargement ; une
@@ -155,9 +155,10 @@ prévoit ; qualité, syntaxe, sécurité et intégrité restent bloquantes.
 
 Avant de modifier : lire les sources, confirmer branche et état Git, identifier vues,
 événements, données et clés touchés, puis faire le changement minimal. Préserver le
-`localStorage`. Vérifier les deux profils si la surface ou le contrat est partagé ou si
-une fuite est possible. Ne pas altérer arbitrairement seeds, dates, snapshots ou fixtures
-pour réussir un test. À la fin, seuls les fichiers du ticket doivent être modifiés.
+
+- Vérifier l’absence de toute surface financière visible ou accessible. Ne pas altérer
+  arbitrairement seeds, dates, snapshots ou fixtures
+  pour réussir un test. À la fin, seuls les fichiers du ticket doivent être modifiés.
 
 Adapter les validations à la portée réelle et les lancer depuis la racine.
 
@@ -233,7 +234,8 @@ Scénarios selon l’impact :
   recharger et vérifier états et durées.
 - **Scan** : action explicite, remplissage sans démarrage et repli manuel ; ne pas annoncer
   un test caméra sans appareil et permission réels.
-- **Facturation** : si touchés, vérifier filtres, détail, montant fictif et CSV.
+- **Relevés** : vérifier un PDF client, un ZIP tous clients extractible, l’absence de fichier
+  vide, les noms déterministes, les octets identiques au téléchargement/envoi et zéro réseau.
 
 Restaurer les données locales après les seeds. Ne déclarer que les tests réellement faits
 et signaler ceux impossibles.
